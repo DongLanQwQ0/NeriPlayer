@@ -19,6 +19,7 @@ import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Assume.assumeFalse
@@ -53,6 +54,9 @@ class VivoMusicCardInteractionTest {
             val favorite = preview.findViewById<android.widget.CheckBox>(id("vivo_music_favorite"))
             assertEquals((44 * context.resources.displayMetrics.density).toInt(), favorite.width)
             assertFalse(favorite.isChecked)
+            val targets = preview.findViewById<LinearLayout>(id("vivo_music_seek_targets"))
+            assertEquals(41, targets.childCount)
+            for (index in 0 until targets.childCount) assertNull(targets.getChildAt(index).background)
         }
     }
 
