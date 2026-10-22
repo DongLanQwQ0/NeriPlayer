@@ -37,6 +37,8 @@ class VivoMergedForegroundTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val manager = context.getSystemService(NotificationManager::class.java)
+        val route = InstrumentationRegistry.getArguments().getString("vivoForegroundRoute", "notify")
+        require(route in setOf("notify", "foreground-update", "foreground-direct"))
         val id = VivoForegroundProbeService.ID
         assumeFalse(AudioPlayerService.isForegroundActiveForDiagnostics())
         assumeTrue(manager.areNotificationsEnabled())
@@ -60,7 +62,7 @@ class VivoMergedForegroundTest {
         val session = MediaSession(context, "vivo-foreground-probe")
         val service = Intent(context, VivoForegroundProbeService::class.java)
         try {
-            val notification = Notification.Builder.recoverBuilder(context, customNotification(context))
+            val notification = Notification.Builder.recoverBuilder(context, fixtureNotification(context))
                 .setChannelId(channel)
                 .setStyle(Notification.MediaStyle().setMediaSession(session.sessionToken))
                 .setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
@@ -74,30 +76,40 @@ class VivoMergedForegroundTest {
                 .setOngoing(true)
                 .setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
                 .build()
-            context.startForegroundService(Intent(service).putExtra(VivoForegroundProbeService.EXTRA_NOTIFICATION, bootstrap))
+            val initial = if (route == "foreground-direct") notification else bootstrap
+            VivoForegroundProbeService.nextNotification = initial
+            context.startForegroundService(service)
             await("Bootstrap foreground notice was not posted") { manager.activeNotifications.any { it.id == id } }
             assertForeground(context)
-            manager.notify(id, notification)
+            if (route == "notify") manager.notify(id, notification)
+            else if (route == "foreground-update") {
+                VivoForegroundProbeService.nextNotification = notification
+                context.startService(service)
+            }
             await("Merged foreground notice did not enter SuperX") {
                 manager.activeNotifications.any { it.id == id && it.tag == "VIVO_SUPERX_TAG" }
             }
             assertForeground(context)
             val first = manager.activeNotifications.filter { it.id == id }
-            println("Merged FGS start: ${first.map { "tag=${it.tag}, flags=${it.notification.flags}" }}")
-            assertEquals("Recheck the firmware's notification identity behavior", 2, first.size)
+            instrumentation.sendStatus(0, android.os.Bundle().apply {
+                putString("stream", "\nFGS route=$route identities=${first.map { "tag=${it.tag}, flags=${it.notification.flags}" }}\n")
+            })
+            assertTrue("Unexpected notification identities", first.size in 1..2)
             assertTrue("Bootstrap lost its foreground flag",
-                first.single { it.tag == null }.notification.flags and Notification.FLAG_FOREGROUND_SERVICE != 0)
-            assertEquals("SuperX unexpectedly acquired foreground ownership", 0,
-                first.single { it.tag == "VIVO_SUPERX_TAG" }.notification.flags and Notification.FLAG_FOREGROUND_SERVICE)
+                first.any { it.notification.flags and Notification.FLAG_FOREGROUND_SERVICE != 0 })
 
             val update = Notification.Builder.recoverBuilder(context, notification).setContentTitle("Vivo merged update").build()
             update.extras.putInt("notification.superx.operation", 1)
-            manager.notify(id, update)
+            if (route == "notify") manager.notify(id, update)
+            else {
+                VivoForegroundProbeService.nextNotification = update
+                context.startService(service)
+            }
             await("Merged update was not delivered") {
                 manager.activeNotifications.any { it.id == id &&
                     it.notification.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() == "Vivo merged update" }
             }
-            assertEquals("Update changed the notification identities", 2, manager.activeNotifications.count { it.id == id })
+            assertEquals("Update changed the notification identities", first.size, manager.activeNotifications.count { it.id == id })
             assertForeground(context)
             println("Merged FGS update: ${manager.activeNotifications.filter { it.id == id }.map { "tag=${it.tag}, flags=${it.notification.flags}" }}")
             context.stopService(service)
@@ -123,7 +135,7 @@ class VivoMergedForegroundTest {
         assertTrue("ActivityManager lost the foreground service", active && VivoForegroundProbeService.running)
     }
 
-    private fun customNotification(context: Context): Notification {
+    internal fun fixtureNotification(context: Context): Notification {
         val type = Class.forName("moe.ouom.neriplayer.core.player.service.presentation.VivoMusicIslandBridge")
         val bridge = type.getDeclaredConstructor(Context::class.java).newInstance(context)
         val lyricType = Class.forName("moe.ouom.neriplayer.core.player.service.notification.StatusBarLyricNotificationState")

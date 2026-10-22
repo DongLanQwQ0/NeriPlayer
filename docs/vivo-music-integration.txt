@@ -71,7 +71,25 @@ VivoMergedForegroundTest 使用独立测试 ID 和无播放会话复查此行为
 该测试已通过创建、更新、前台服务停止及按真实 tag 显式撤下的完整检查；这验证的是
 双身份行为及清理路径，通知去重仍未完成。
 该固件 RemoteViews.DrawInstructions 的版本为 6，能膨胀 RemoteComposePlayer；
-VivoRemoteDrawingDeviceTest 已通过基础渲染器检查。原子岛宿主中的显示、交互与动画尚未验收。
+VivoRemoteDrawingDeviceTest 已通过基础渲染器检查。
+
+连续动画试验
+最小 RemoteCompose 文档已在上述真机的原子岛展开区域实际显示；该次试验的文档
+按原始像素尺寸显示，未铺满卡片。测试文档已补充按宿主宽度缩放，尚待真机复验。
+Android API 36 模拟器中，同一文档不重发通知、不重建 RemoteViews，两次间隔约
+700ms 的离屏绘制进度宽度由 19px 变为 78px，连续时间表达式渲染检查通过。
+点击检查在真实附着窗口中通过：RemoteCompose 点击区域经 RemoteViews 的
+PendingIntent 到达独立测试接收器，不启动播放器或修改收藏。离屏触摸检查未能收到
+回调，修正为附着窗口测试后通过；交互验收必须在真实窗口中进行。
+remote-creation-core 1.0.0-alpha22 仅用于 androidTest，不进入应用运行时依赖。
+这些试验证明绘制与点击的基础路线可行，完整音乐卡片、跳转过渡及真机连续帧尚未验收。
+
+新增前台服务路径试验通过 vivoForegroundRoute 选择 foreground-update 或
+foreground-direct，分别检查标准通知启动后由 startForeground 更新、直接使用
+SuperX 通知启动。测试通知在服务所在进程准备，避免通过启动 Intent 携带整张卡片。
+本轮真机试验期间用户确认另一个 AI 同时控制手机；前台路径结果及连续帧检查须在
+独占窗口重新执行，当前不据此判定任一路径可用或不可用。测试只操作独立通知 ID，
+禁止同时运行其他 UI 自动化。两种路径仍需检查前台标记、实际 tag、更新和撤下。
 
 测试场景配置
 应用不会注册或强开系统场景。以下 instrumentation 入口仅供已授权 ADB 测试使用：
