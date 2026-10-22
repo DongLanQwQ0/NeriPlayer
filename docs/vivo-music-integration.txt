@@ -63,6 +63,15 @@ waveColor 提供青蓝两色。已在真机连续帧中观察到音律条高度�
 当前仍分别发布前台媒体通知与 SuperX 卡片，原生随身听还会提供系统控制面板。
 单独把显示掩码改为 0x100 的真机试验仍能在通知栏看到 SuperX 卡片，生产配置保留 0x111。
 通知合并尚未实现；后续必须同时验证前台服务存活、系统 tag 转换、更新与撤下，保留后台播放能力。
+同一真机的隔离前台服务试验发现：先发布标准 MediaStyle 前台通知，再用相同 ID 发布
+SuperX 卡片，系统仍保留两个身份：无 tag 的通知 flags=8290，VIVO_SUPERX_TAG 的
+通知 flags=8234。等待五秒仍未合并；仅前者带 FLAG_FOREGROUND_SERVICE（64）。
+因此“改成同一个 ID”不能完成通知去重，也不能通过取消前者来保留可靠的后台播放。
+VivoMergedForegroundTest 使用独立测试 ID 和无播放会话复查此行为，不触碰用户媒体通知。
+该测试已通过创建、更新、前台服务停止及按真实 tag 显式撤下的完整检查；这验证的是
+双身份行为及清理路径，通知去重仍未完成。
+该固件 RemoteViews.DrawInstructions 的版本为 6，能膨胀 RemoteComposePlayer；
+VivoRemoteDrawingDeviceTest 已通过基础渲染器检查。原子岛宿主中的显示、交互与动画尚未验收。
 
 测试场景配置
 应用不会注册或强开系统场景。以下 instrumentation 入口仅供已授权 ADB 测试使用：
