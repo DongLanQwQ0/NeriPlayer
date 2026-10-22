@@ -229,8 +229,8 @@ internal class VivoMusicIslandBridge(private val context: Context) {
             setImageViewBitmap(R.id.vivo_music_app, cardArtwork.appIcon)
             setContentDescription(R.id.vivo_music_app, context.getString(CommonR.string.app_name))
             setOnClickPendingIntent(R.id.vivo_music_app, open)
-            if (inputs.artwork != null) setImageViewBitmap(R.id.vivo_music_artwork, cardArtwork.cover)
-            else setImageViewResource(R.id.vivo_music_artwork, CommonR.drawable.ic_notification_small)
+            // Use our owned bitmap instead of the shared small-icon resource as the card placeholder.
+            setImageViewBitmap(R.id.vivo_music_artwork, cardArtwork.cover ?: cardArtwork.appIcon)
             setViewVisibility(R.id.vivo_music_progress_row, if (durationMs > 0L) View.VISIBLE else View.GONE)
             setTextViewText(R.id.vivo_music_elapsed, formatPlaybackWidgetTime(inputs.positionMs.coerceIn(0L, durationMs)).padStart(5, '0'))
             setTextViewText(R.id.vivo_music_duration, formatPlaybackWidgetTime(durationMs).padStart(5, '0'))

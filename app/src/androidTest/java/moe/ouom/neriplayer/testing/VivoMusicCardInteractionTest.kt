@@ -33,6 +33,7 @@ import java.io.File
 import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.roundToInt
 
 /** Rendering is read-only; playback fixtures require an explicitly selected, idle emulator. */
 @ManualInstrumentedTest
@@ -57,7 +58,7 @@ class VivoMusicCardInteractionTest {
                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
             }
             val favorite = preview.findViewById<android.widget.CheckBox>(id("vivo_music_favorite"))
-            assertEquals((44 * context.resources.displayMetrics.density).toInt(), favorite.width)
+            assertEquals((44 * context.resources.displayMetrics.density).roundToInt(), favorite.width)
             assertFalse(favorite.isChecked)
             val targets = preview.findViewById<LinearLayout>(id("vivo_music_seek_targets"))
             assertEquals(41, targets.childCount)
