@@ -53,12 +53,65 @@ class UpstreamBuildTests(unittest.TestCase):
         self.assertEqual("release", result[0]["kind"])
 
     def test_source_conflict_stops_before_submodule_or_build_work(self):
-        with patch.object(follow, "git") as git, \
-                patch.object(follow.subprocess, "run", side_effect=subprocess.CalledProcessError(1, "git rebase")) as run:
+        def git_result(*args):
+            return "b" * 40 if args[:4] == ("rev-list", "--reverse", "--topo-order", "--no-merges") else ""
+
+        with patch.object(follow, "git", side_effect=git_result) as git, \
+                patch.object(follow.subprocess, "run", side_effect=subprocess.CalledProcessError(1, "git cherry-pick")) as run:
             with self.assertRaises(subprocess.CalledProcessError):
                 follow.prepare("a" * 40)
         self.assertEqual(1, run.call_count)
         self.assertFalse(any(call.args[0] == "push" for call in git.call_args_list))
+
+    def test_rejects_merges_with_resolution_changes(self):
+        def git_result(*args):
+            if args[:2] == ("rev-list", "--merges"):
+                return "b" * 40
+            return "resolved diff" if args[0] == "show" else ""
+
+        with patch.object(follow, "git", side_effect=git_result) as git, patch.object(follow.subprocess, "run") as run:
+            with self.assertRaisesRegex(ValueError, "merge conflict resolutions"):
+                follow.prepare("a" * 40)
+        run.assert_not_called()
+        self.assertFalse(any(call.args[0] == "switch" for call in git.call_args_list))
+
+    def test_sync_merge_does_not_replay_later_upstream_changes_into_an_older_build(self):
+        with tempfile.TemporaryDirectory() as directory:
+            def local_git(*args):
+                if args[0] == "fetch":
+                    return ""
+                return subprocess.check_output(["git", *args], cwd=directory, text=True).strip()
+
+            subprocess.run(["git", "init", "-b", "master", directory], check=True, capture_output=True)
+            local_git("config", "user.name", "Test")
+            local_git("config", "user.email", "test@example.com")
+            Path(directory, "upstream.txt").write_text("base\n", encoding="utf-8")
+            local_git("add", ".")
+            local_git("commit", "-m", "base")
+            base = local_git("rev-parse", "HEAD")
+            local_git("branch", "upstream")
+            Path(directory, "vivo.txt").write_text("adaptation\n", encoding="utf-8")
+            local_git("add", ".")
+            local_git("commit", "-m", "vivo adaptation")
+            local_git("switch", "upstream")
+            Path(directory, "upstream.txt").write_text("later upstream\n", encoding="utf-8")
+            local_git("commit", "-am", "upstream change")
+            local_git("update-ref", "refs/remotes/vivo-upstream/master", "HEAD")
+            local_git("switch", "master")
+            local_git("merge", "--no-ff", "--no-edit", "upstream")
+            Path(directory, "vivo.txt").write_text("updated adaptation\n", encoding="utf-8")
+            local_git("commit", "-am", "vivo fix after sync")
+            original_run = subprocess.run
+
+            def local_run(args, **kwargs):
+                kwargs.setdefault("cwd", directory)
+                return original_run(args, **kwargs)
+
+            with patch.object(follow, "git", side_effect=local_git), \
+                    patch.object(follow, "PATCH_BASE", base), patch.object(follow.subprocess, "run", side_effect=local_run):
+                follow.prepare(base)
+            self.assertEqual("base\n", Path(directory, "upstream.txt").read_text(encoding="utf-8"))
+            self.assertEqual("updated adaptation\n", Path(directory, "vivo.txt").read_text(encoding="utf-8"))
 
     def test_rejects_a_non_sha_target(self):
         with self.assertRaises(ValueError):

@@ -18,7 +18,7 @@ MediaSession.sessionActivity 提供返回应用的入口。
 
 原生随身听面板可显示封面、歌名、歌手并执行播放、暂停和切歌。
 顶部原生音乐岛另外检查随身听内部固定包名集合，音源名单配置不能解除该限制。
-已补充原生列表浏览与红心协议，原生面板的实际点选和收藏状态回传仍待真机验收。
+已补充原生列表浏览与红心协议；上述真机原生面板的列表点选及收藏状态回传已通过。
 vivomusicmix_current_list、vivomusicmix_favorite_list、vivomusicmix_local_list
 分别映射当前队列、应用收藏歌单和离线曲库。每页最多 50 首，读取
 vivomusicmix_key_media_page，返回 vivomusicmix_key_has_more 与当前页号。
@@ -94,7 +94,9 @@ VivoMusicCardInteractionTest（显式 runVivoCardInteraction=true，仅空队列
 修正后 vivo 真机只读渲染与重绘复用热区两项通过，默认封面预览已检查。
 宽度断言采用 Android dp 转像素的舍入规则，避免非整数密度下的一像素误报。
 CarMediaBrowserIntegrationTest#vivoQueueDirectoryReturnsTheExistingPlaybackQueueWithoutStartingPlayback
-已在 vivo 真机通过。原生列表点选、原生红心、通知去重及帧耗时仍待交互验收。
+已在 vivo 真机通过。原生面板展开列表后，点选 Sad Legend Story，媒体会话曲目同步切换；
+红心取消收藏后，原生面板变为“未收藏”，会话收藏操作随之更新，再次点按恢复“已收藏”。
+测试后已回到 Pray For You、恢复原收藏状态并暂停播放。通知去重及帧耗时仍待验收。
 
 本机测试产物与恢复
 F:\Android\NeriPlayerChecks\neriplayer-vivo-test.apk

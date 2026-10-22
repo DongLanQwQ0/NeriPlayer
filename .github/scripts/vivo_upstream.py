@@ -1,4 +1,4 @@
-"""Discover upstream builds and replay the fork's small patch series without pushing history."""
+"""Discover upstream builds and replay only the fork's adaptations without pushing history."""
 
 import argparse
 from datetime import datetime
@@ -89,9 +89,21 @@ def prepare(sha):
         raise ValueError("Expected an upstream commit SHA")
     git("config", "user.name", "github-actions[bot]")
     git("config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com")
+    upstream_tip = "refs/remotes/vivo-upstream/master"
+    git("fetch", "--no-tags", f"https://github.com/{UPSTREAM}.git",
+        f"refs/heads/master:{upstream_tip}")
+    git("merge-base", "--is-ancestor", PATCH_BASE, upstream_tip)
     git("fetch", "--no-tags", f"https://github.com/{UPSTREAM}.git", sha)
-    # Rebase only this runner's checkout. Never force-push the user's branch.
-    subprocess.run(["git", "rebase", "--onto", sha, PATCH_BASE], check=True)
+    # An upstream sync merge must not make later upstream changes part of an older build.
+    own_range = (f"{PATCH_BASE}..HEAD", "--not", upstream_tip)
+    for merge in git("rev-list", "--merges", *own_range).splitlines():
+        if git("show", "--remerge-diff", "--format=", "--no-ext-diff", merge):
+            raise ValueError("Cannot replay merge conflict resolutions; refresh the adaptation patch series before building")
+    patches = git("rev-list", "--reverse", "--topo-order", "--no-merges", *own_range).splitlines()
+    # Only the temporary runner checkout changes; published branch history remains intact.
+    git("switch", "--detach", sha)
+    if patches:
+        subprocess.run(["git", "cherry-pick", *patches], check=True)
     subprocess.run(["git", "submodule", "update", "--init", "--recursive"], check=True)
 
 
