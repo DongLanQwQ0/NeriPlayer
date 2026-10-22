@@ -1,0 +1,60 @@
+自动跟随上游构建
+================
+
+目标仓库：DongLanQwQ0/NeriPlayer
+上游仓库：cwuom/NeriPlayer，master 主分支。
+入口：.github/workflows/vivo_upstream.yml。
+构建和发布由目标仓库的 GitHub Actions 执行，配置步骤见下文。
+
+运行方式
+工作流每半小时检查一次，也可在 Actions 手动执行。
+从 PATCH_BASE 开始，逐个构建 master 的新主线提交，以及此基线时间之后发布的 Release
+（包括预发布）。不追踪其他分支，也不为合并进 master 的每个支线提交重复构建。
+每轮最多处理八项，最多同时构建两项；积压会在后续轮次继续处理。
+上游 commit 和 Release 分开记录，即使指向同一提交也会生成独立产物。
+GitHub 定时任务可能延迟；公网仓库连续 60 天无活动时，定时任务可能被禁用，需重新启用。
+这不保证捕获检查间隔内已经被上游强推删除的提交。
+
+保留适配与干净历史
+PATCH_BASE 是本次修改之前的原始上游提交：
+f146a1fc65b1427a9950b9db95b2d1f1da536421。
+提交前将 vivo 功能和跟随构建整理为两个逻辑完整的提交，保持此基线之后只包含自己的改动。
+CI 在临时 checkout 中，将基线之后的适配提交 rebase 到待构建的上游版本，再初始化子模块。
+不会向仓库提交轮询状态、自动合并或强推。原仓库的其他工作流保持不变。
+发生源码冲突或测试失败时，该构建停止，不丢弃适配、忽略测试或发布失败 APK。
+通过 Actions 失败通知处理冲突；修复适配提交后，未发布的任务会重试。
+更新 PATCH_BASE 必须同时整理相应提交范围，不能只修改一个 SHA。
+
+APK 与签名
+构建项目现有 debug variant，包名 moe.ouom.neriplayer.debug，避免覆盖原版应用。
+保留现有版本计算、Gradle Wrapper、AGP、SDK 和原生构建版本，不主动升级依赖。
+复用现有展示层单元测试；通过后构建 APK。CI 不包含 vivo 真机验收。
+独立的发布 runner 签名，不在执行上游构建的 runner 中暴露签名密钥。
+固定签名可持续覆盖同包测试版。默认沿用项目按小时生成的 versionCode，
+同一小时可能相同；同签名同版本号可替换安装，不保证应用内更新器会提示。
+Release 附带 APK 与实际应用改动后的源码 ZIP（含已初始化子模块），保留 GPL 与第三方许可证。
+GitHub 自动生成的 Source code 附件只对应派生仓库的提交，应使用额外的源码 ZIP 复现对应构建。
+
+仓库配置
+1. 将两个整理后的本地提交推送到目标仓库默认分支，并启用 GitHub Actions。
+2. 在该仓库 Actions Secrets 中配置：
+   VIVO_KEYSTORE_B64：固定测试 p12 的 Base64。
+   VIVO_STORE_PASSWORD：存储口令。
+   VIVO_KEY_PASSWORD：密钥口令。
+   VIVO_KEY_ALIAS：neri-vivo-test。
+   使用已批准的凭证工具传入，禁止把签名文件或口令提交到 Git。
+3. 派生仓库只启用需要的工作流。原上游 CI / 手动发布依赖自己的 Secrets 和运行资源，
+   不应误触原上游发布配置。不要改写其原始工作流来绕过要求。
+4. 在仓库 Watch → Custom 中订阅 Releases；个人 Settings → Notifications 中启用邮件。
+   同时开启 Actions 失败邮件，以便收到冲突、构建和签名失败通知。
+5. 手动运行一次，确认 APK 签名、Release 附件、对应源码及邮件实际送达。
+   commit 构建标为 prerelease，Release 构建为普通 release，全部不抢占 latest。
+   GitHub 邮件投递取决于账号订阅与邮件设置，本地无法验证。
+
+完成标记以目标仓库非草稿 Release 及两个非空附件为准。删除相应 Release 会使任务重新排队。
+适配代码改变后，已完成的上游版本不会自动重复发布；可删除指定构建 Release 后手动重跑。
+已失败的同名草稿会被下次重试补齐附件，然后发布。
+
+官方行为参考
+https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows
+https://docs.github.com/en/subscriptions-and-notifications/get-started/configuring-notifications
