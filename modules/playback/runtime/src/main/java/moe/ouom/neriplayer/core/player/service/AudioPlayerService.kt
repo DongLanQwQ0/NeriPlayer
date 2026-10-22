@@ -46,6 +46,8 @@ import moe.ouom.neriplayer.core.player.service.notification.FlymeStatusBarLyricS
 import moe.ouom.neriplayer.core.player.service.notification.isFloatingLyricsEffectivelyEnabled
 import moe.ouom.neriplayer.core.player.service.notification.resolveStatusBarLyricNotificationState
 import moe.ouom.neriplayer.core.player.service.notification.statusBarLyricNotificationStateFlow
+import moe.ouom.neriplayer.core.player.service.notification.resolveNotificationSeekPosition
+import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.core.player.service.presentation.AndroidPlaybackServicePresentationPort
 import moe.ouom.neriplayer.core.player.service.presentation.AndroidPlaybackServicePresentationSource
 import moe.ouom.neriplayer.core.player.service.presentation.PlaybackServicePresentationOwner
@@ -355,6 +357,11 @@ class AudioPlayerService : Service() {
         const val ACTION_STOP = "moe.ouom.neriplayer.action.STOP"
         const val ACTION_NEXT = "moe.ouom.neriplayer.action.NEXT"
         const val ACTION_PREV = "moe.ouom.neriplayer.action.PREV"
+        const val ACTION_SEEK_TO = "moe.ouom.neriplayer.action.SEEK_TO"
+        const val ACTION_VIVO_SET_PLAYING = "moe.ouom.neriplayer.action.VIVO_SET_PLAYING"
+        const val ACTION_VIVO_SET_FAVORITE = "moe.ouom.neriplayer.action.VIVO_SET_FAVORITE"
+        const val EXTRA_SEEK_POSITION_MS = "seek_position_ms"
+        const val EXTRA_SEEK_SONG_KEY = "seek_song_key"
         const val ACTION_SYNC = "moe.ouom.neriplayer.action.SYNC"
         const val ACTION_TOGGLE_FAV = "moe.ouom.neriplayer.action.TOGGLE_FAVORITE"
         const val ACTION_TOGGLE_FLOATING_LYRICS =
@@ -744,10 +751,7 @@ class AudioPlayerService : Service() {
             updateAll()
         }
         override fun seek(positionMs: Long) {
-            PlayerManager.seekTo(positionMs)
-            updatePlaybackState(force = true)
-            updateNotification()
-            updatePlaybackWidget(force = true)
+            seekFromExternalSurface(positionMs)
         }
         override fun customAction(action: String, extras: Bundle?) = handleMediaSessionCustomAction(action)
     })
@@ -759,6 +763,14 @@ class AudioPlayerService : Service() {
         else PlayerManager.play()
         updateAll()
         refreshIdleShutdown("media_session_play")
+    }
+
+    private fun seekFromExternalSurface(positionMs: Long) {
+        presentationOwner.previewNotificationControl(positionMs = positionMs)
+        PlayerManager.seekTo(positionMs)
+        updatePlaybackState(force = true)
+        updateNotification(force = true)
+        updatePlaybackWidget(force = true)
     }
 
     private fun playCarSelection(selection: CarPlaybackSelection) {
@@ -1341,6 +1353,36 @@ class AudioPlayerService : Service() {
             ACTION_PREV -> {
                 PlayerManager.previous()
                 updateAll()
+            }
+            ACTION_SEEK_TO -> {
+                val song = PlayerManager.currentSongFlow.value
+                val position = resolveNotificationSeekPosition(
+                    currentSongKey = song?.stableKey(),
+                    durationMs = PlayerManager.playbackDurationFlow.value.takeIf { it > 0L }
+                        ?: song?.durationMs ?: 0L,
+                    requestedSongKey = intent.getStringExtra(EXTRA_SEEK_SONG_KEY),
+                    positionMs = intent.getLongExtra(EXTRA_SEEK_POSITION_MS, -1L),
+                )
+                if (position != null) seekFromExternalSurface(position)
+            }
+            ACTION_VIVO_SET_PLAYING -> {
+                if (intent.getStringExtra(EXTRA_SEEK_SONG_KEY) == PlayerManager.currentSongFlow.value?.stableKey() &&
+                    intent.hasExtra(android.widget.RemoteViews.EXTRA_CHECKED)) {
+                    val playing = intent.getBooleanExtra(android.widget.RemoteViews.EXTRA_CHECKED, false)
+                    presentationOwner.previewNotificationControl(playing = playing)
+                    if (playing) resumeFromMediaSession() else handleExternalPauseCommand("intent_pause")
+                }
+            }
+            ACTION_VIVO_SET_FAVORITE -> {
+                val song = PlayerManager.currentSongFlow.value
+                if (song != null && intent.getStringExtra(EXTRA_SEEK_SONG_KEY) == song.stableKey() &&
+                    intent.hasExtra(android.widget.RemoteViews.EXTRA_CHECKED)) {
+                    val favorite = intent.getBooleanExtra(android.widget.RemoteViews.EXTRA_CHECKED, false)
+                    presentationOwner.previewNotificationControl(favorite = favorite)
+                    if (canToggleFavoriteFromExternalSurface(song)) {
+                        if (favorite) PlayerManager.addCurrentToFavorites() else PlayerManager.removeCurrentFromFavorites()
+                    }
+                }
             }
             ACTION_STOP -> {
                 handleExternalPauseCommand("intent_stop", stopService = true)

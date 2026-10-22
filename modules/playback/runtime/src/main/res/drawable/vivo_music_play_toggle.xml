@@ -1,0 +1,8 @@
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_checked="true">
+        <inset android:drawable="@drawable/vivo_music_pause" android:insetLeft="12dp" android:insetRight="12dp" android:insetTop="8dp" android:insetBottom="8dp" />
+    </item>
+    <item>
+        <inset android:drawable="@drawable/vivo_music_play" android:insetLeft="12dp" android:insetRight="12dp" android:insetTop="8dp" android:insetBottom="8dp" />
+    </item>
+</selector>

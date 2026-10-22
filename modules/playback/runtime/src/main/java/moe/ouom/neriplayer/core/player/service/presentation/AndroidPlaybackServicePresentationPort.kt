@@ -55,6 +55,9 @@ internal data class PlaybackServiceNotificationRenderInputs(
     val lyricState: StatusBarLyricNotificationState,
     val artwork: Bitmap?,
     val shareUrl: String?,
+    val positionMs: Long = 0L,
+    val lyricLine: String? = null,
+    val durationMs: Long = song?.durationMs ?: 0L,
 )
 
 internal fun resolveXiaomiIslandShare(song: SongItem?, shareUrl: String?): Pair<SongItem, String>? {
@@ -84,6 +87,7 @@ internal interface PlaybackServicePresentationPort {
     fun buildMinimalForegroundNotification(): Notification
     fun buildNotification(inputs: PlaybackServiceNotificationRenderInputs): Notification
     fun publishNotification(inputs: PlaybackServiceNotificationRenderInputs)
+    fun previewNotificationControl(playing: Boolean? = null, favorite: Boolean? = null, positionMs: Long? = null) {}
     fun hasInstalledWidgets(): Boolean
     fun publishWidget(state: PlaybackWidgetState, artwork: Bitmap?)
     fun publishWidgetProgress(state: PlaybackWidgetState)
@@ -105,10 +109,12 @@ internal class AndroidPlaybackServicePresentationPort(
         .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
         .build()
     private var mediaSession: MediaSession? = null
+    private val vivoMusicIsland = VivoMusicIslandBridge(context)
 
     override fun initializeSession(callback: MediaSession.Callback) {
         mediaSession = MediaSession(context, "NeriPlayerSession").apply {
             setCallback(callback)
+            setSessionActivity(mainActivityPendingIntent())
             setPlaybackToLocal(audioAttributes)
             isActive = true
         }
@@ -174,9 +180,14 @@ internal class AndroidPlaybackServicePresentationPort(
     override fun publishNotification(inputs: PlaybackServiceNotificationRenderInputs) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.notify(AudioPlayerService.NOTIFICATION_ID, buildNotification(inputs))
+        vivoMusicIsland.publish(inputs)
     }
 
     override fun hasInstalledWidgets(): Boolean = PlayerDependencies.presentation.hasInstalledWidgets(context)
+
+    override fun previewNotificationControl(playing: Boolean?, favorite: Boolean?, positionMs: Long?) {
+        vivoMusicIsland.previewControl(playing, favorite, positionMs)
+    }
 
     override fun publishWidget(state: PlaybackWidgetState, artwork: Bitmap?) {
         PlayerDependencies.presentation.publishWidget(context, state, artwork)
@@ -197,6 +208,7 @@ internal class AndroidPlaybackServicePresentationPort(
 
     override fun setPlaybackState(state: PlaybackState) {
         requireSession().setPlaybackState(state)
+        vivoMusicIsland.updatePlaybackState(state)
     }
 
     override fun dispatchMediaButtonIntent(intent: Intent?) {
@@ -219,6 +231,7 @@ internal class AndroidPlaybackServicePresentationPort(
     )
 
     private fun releaseSession(session: MediaSession) {
+        vivoMusicIsland.clear()
         session.isActive = false
         session.release()
     }

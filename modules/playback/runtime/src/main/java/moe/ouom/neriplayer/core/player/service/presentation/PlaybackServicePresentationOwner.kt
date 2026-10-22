@@ -54,6 +54,7 @@ internal data class PlaybackNotificationSnapshot(
     val coverSource: String?,
     val statusBarLyricState: StatusBarLyricNotificationState,
     val floatingLyricsEnabled: Boolean,
+    val durationMs: Long = 0L,
 )
 
 internal data class PlaybackMetadataSnapshot(
@@ -167,6 +168,9 @@ internal class PlaybackServicePresentationOwner(
 
     fun dispatchMediaButtonIntent(intent: Intent?) = port.dispatchMediaButtonIntent(intent)
 
+    fun previewNotificationControl(playing: Boolean? = null, favorite: Boolean? = null, positionMs: Long? = null) =
+        port.previewNotificationControl(playing, favorite, positionMs)
+
     fun invalidateMetadataSnapshot() {
         lastMetadataSnapshot = null
     }
@@ -230,6 +234,8 @@ internal class PlaybackServicePresentationOwner(
         val text = notificationText(song)
         val favorite = isFavoriteSong(song)
         val interactiveFavorite = requiresInteractiveFavoriteConfirmation(song)
+        val durationMs = playback.playerDurationMs.takeIf { playback.playerSongPresent && it > 0L }
+            ?: song?.durationMs ?: 0L
         val snapshot = serviceNotificationSnapshot(
             song = song,
             text = text,
@@ -253,8 +259,11 @@ internal class PlaybackServicePresentationOwner(
             lyricState = lyricState,
             artwork = artworkSnapshot.notificationBitmap,
             shareUrl = null,
+            positionMs = servicePlaybackPositionMs(playback),
+            lyricLine = source.metadata().payload.lyric,
+            durationMs = durationMs,
         )
-        return PreparedServiceNotification(snapshot, renderInputs)
+        return PreparedServiceNotification(snapshot.copy(durationMs = durationMs), renderInputs)
     }
 
     fun updateWidget(force: Boolean, floatingLyricsEnabled: Boolean) {

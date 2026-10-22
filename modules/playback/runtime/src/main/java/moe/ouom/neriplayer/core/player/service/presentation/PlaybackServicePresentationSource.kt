@@ -36,6 +36,7 @@ internal data class PlaybackServicePlaybackSnapshot(
     val playbackSpeed: Float,
     val queue: List<SongItem> = emptyList(),
     val queueIndex: Int = -1,
+    val playerDurationMs: Long = 0L,
 )
 
 internal data class PlaybackServiceMetadataInputs(
@@ -81,6 +82,7 @@ internal class AndroidPlaybackServicePresentationSource(
             playbackSpeed = PlayerManager.playbackSoundStateFlow.value.speed,
             queue = queue.playlist,
             queueIndex = queue.currentIndex,
+            playerDurationMs = PlayerManager.playbackDurationFlow.value,
         )
     }
 

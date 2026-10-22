@@ -32,6 +32,23 @@ import org.mockito.Mockito.mockingDetails
 @RunWith(AndroidJUnit4::class)
 class PlaybackServicePresentationOwnerTest {
     @Test
+    fun `notification progress uses actual preview duration and republishes duration changes`() = runTest {
+        val current = song().copy(durationMs = 155_000L)
+        val source = FakeSource(playback(current).copy(playerDurationMs = 30_000L))
+        val port = mock(PlaybackServicePresentationPort::class.java)
+        val owner = owner(source, backgroundScope, port, lyricArtwork(current))
+        val lyricState = StatusBarLyricNotificationState(false, null)
+        owner.updateNotification(false, true, lyricState, false)
+        source.currentPlayback = source.currentPlayback.copy(playerDurationMs = 60_000L)
+        owner.updateNotification(false, true, lyricState, false)
+        val inputs = mockingDetails(port).invocations
+            .filter { it.method.name == "publishNotification" }
+            .map { it.arguments[0] as PlaybackServiceNotificationRenderInputs }
+        assertEquals(listOf(30_000L, 60_000L), inputs.map { it.durationMs })
+        assertTrue(inputs.all { it.song == current })
+    }
+
+    @Test
     fun `transport intent without engine playback remains paused`() {
         val requested = playback(song()).copy(
             transportActive = true,

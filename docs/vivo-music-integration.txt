@@ -1,0 +1,78 @@
+vivo 音乐适配
+=============
+
+已验证设备
+V2527A / PD2527，OriginOS 6，Android 16 / API 36。
+固件 PD2527_A_16.0.19.3.W10，原子随身听 com.vivo.musicwidgetmix 6.2.7.2。
+其他固件的场景、模板及准入规则需要重新验证。
+
+原生随身听
+CarMediaBrowserService 同时声明 Android 标准浏览 action 与
+com.vivo.musicwidgetmix.support.service，返回现有播放器的同一个 MediaSession。
+保留原有调用方 UID / 系统媒体控制权限校验，不扩大浏览权限。
+MediaSession.sessionActivity 提供返回应用的入口。
+
+此设备需要系统音源名单配置。只向 musicwidget_list_pkg_type_key 添加包名，
+会在随身听刷新支持名单时被移除。此次测试额外配置了 secure music_app_white_list，
+并保留固件默认音源列表。该配置是经用户授权的本机 ADB 测试设置，生产应用不写此名单。
+
+原生随身听面板可显示封面、歌名、歌手并执行播放、暂停和切歌。
+顶部原生音乐岛另外检查随身听内部固定包名集合，音源名单配置不能解除该限制。
+进度、收藏、循环列表和原生歌词专项协议尚未实现，不能据面板显示认定全部适配完成。
+
+SuperX 自定义音乐岛
+VivoMusicIslandBridge 使用独立场景 NERIPLAYER_MUSIC、独立通知频道和固定通知 ID。
+它不替换播放前台通知，也不依赖原生随身听服务。
+仅在 vivo 设备、通知和频道可用、且 getSceneStatus 明确返回 true 时发布。
+关闭场景、没有曲目或释放播放会话时，按实际活动通知的 tag / ID 撤下。
+展开卡片按原生音乐样式组织封面、歌名、歌词（无歌词时显示歌手）、进度、
+应用入口与上一曲 / 播放暂停 / 下一曲 / 收藏。封面取色生成暗色渐变，位图按封面缓存。
+以用户提供的网易云原生卡片为尺寸参考，在上述真机上校准边距和按钮位置。
+公共爱心图标内部包含缩放，单独补偿其显示尺寸，使可见大小与音源圆标一致。
+控制行向标题内容留白扩展时，中间容器不裁切，外层系统卡片保留边界。
+收起态采用封面与系统音律动画；rightTemplate=1，waveState 同步播放状态，
+waveColor 提供青蓝两色。已在真机连续帧中观察到音律条高度变化。
+歌词使用现有外部歌词数据流，进度使用现有播放状态回调；熄屏不因进度重发卡片。
+收藏复用现有业务操作，需要交互确认时进入应用；点击正文和应用图标返回应用。
+进度条支持点按位置跳转，分为四十等分（含起终点共四十一个热区），复用同一播放器的 seek。
+请求携带歌曲身份，旧卡片不能跳转新歌；未知时长不提供跳转。
+时长优先采用当前播放器的实际媒体时长；试听流按试听长度显示和跳转，避免把歌曲标称时长当作可播放范围。
+标准 RemoteViews 不支持 SeekBar 或拖动回调，因此不提供连续拖动。
+播放和收藏采用系统 CheckBox 状态图，触摸后立即切换图标，再通过显式 PendingIntent 下发目标状态。
+进度跳转立即预览目标位置。待确认状态最多保留三秒，确认后使用真实状态，超时回滚，切歌或撤下时清理。
+自定义卡片要求 Android 12 / API 31 及以上，以使用 RemoteViews 的勾选状态回调。
+通知卡片与展开卡片分别构建，展开卡片额外预留状态栏摄像头安全空间。
+模板 7 和显示掩码 0x111 是上述固件的实测配置。
+自定义路线自行绘制歌词和播放进度，未接入 vivo 原生音乐歌词专项协议。
+
+测试场景配置
+应用不会注册或强开系统场景。以下 instrumentation 入口仅供已授权 ADB 测试使用：
+
+adb -s SERIAL shell am instrument -w -e configureVivoScene true -e vivoSceneEnabled true -e class moe.ouom.neriplayer.testing.VivoMusicIslandDeviceTest#configureSceneForExplicitAdbTest moe.ouom.neriplayer.debug.test/moe.ouom.neriplayer.testing.NeriPlayerInstrumentationTestRunner
+
+把 vivoSceneEnabled 改为 false 可关闭测试场景。
+配置仅影响已安装的目标包名；debug 包与正式包必须分别处理。
+需要应用包和测试包使用相同签名。系统安装确认由用户操作。
+
+回归测试
+CarMediaBrowserIntegrationTest#vivoDiscoveryReusesTheTrustedBrowserAndPlaybackSession
+CarMediaBrowserIntegrationTest#frameworkBrowserReusesPlaybackSessionWithoutPlayingOrStartingForeground
+VivoMusicIslandDeviceTest#cancellationUsesTheActualNotificationIdentity
+该真机测试同时验证生产 RemoteViews 可膨胀，歌词、已播时间、总时长和进度值正确。
+VivoMusicCardInteractionTest（显式 runVivoCardInteraction=true，仅空队列、空闲模拟器）
+验证立即切换图标、真实暂停播放 seek、切歌后拒绝旧控件，并输出实际 RemoteViews 预览。
+2026-10-22，经用户重新授权，通过无线 ADB 在上述 vivo 真机安装更新并补验。
+已观察到展开卡片边缘完整、音源圆标与爱心匹配，播放暂停图标随点按切换，收藏可切换并已还原。
+真机发现 Let Me 返回 30 秒试听流，而歌曲标称时长为 155 秒；已修正卡片时长和跳转范围。
+修正后卡片显示 00:30，点按进度中点显示 00:15，媒体会话实际位置随后为 16103ms，保持播放。
+生产卡片膨胀、实际媒体时长覆盖标称时长及带真实系统 tag 的撤下回归在真机通过（1 项）。
+二十三项相关单元测试通过；此前点按 seek 与旧歌曲保护已在模拟器通过。
+模拟器完整交互测试曾因冷启动 ANR 进入安全模式而未通过；同步勾选的隔离断言仍需在正常启动的模拟器补验。
+
+本机测试产物与恢复
+F:\Android\NeriPlayerChecks\neriplayer-vivo-test.apk
+F:\Android\NeriPlayerChecks\neriplayer-vivo-androidTest.apk
+F:\Android\NeriPlayerChecks\Restore-VivoMusic.ps1
+测试包名 moe.ouom.neriplayer.debug，与正式应用分开安装。
+测试签名及由当前 Windows 用户 DPAPI 保护的口令保存在该目录的 signing 子目录。
+所有新增构建工具、依赖、下载和测试大文件均放在 F 盘。

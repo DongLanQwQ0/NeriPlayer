@@ -71,6 +71,25 @@ class CarMediaBrowserIntegrationTest {
     }
 
     @Test
+    fun vivoDiscoveryReusesTheTrustedBrowserAndPlaybackSession() {
+        fun service(action: String) = context.packageManager.queryIntentServices(
+            Intent(action).setPackage(context.packageName), 0,
+        ).single().serviceInfo
+
+        val standard = service("android.media.browse.MediaBrowserService")
+        val vivo = service("com.vivo.musicwidgetmix.support.service")
+        assertEquals(standard.name, vivo.name)
+        assertTrue(vivo.exported)
+
+        val connected = connectBrowser()
+        assertEquals(playbackSessionToken(), connected.sessionToken)
+        val controller = MediaController(context, connected.sessionToken)
+        assertEquals(context.packageName, controller.sessionActivity?.creatorPackage)
+        assertFalse("音源发现不能开始播放", hasActivePlayback())
+        assertFalse(AudioPlayerService.isForegroundActiveForDiagnostics())
+    }
+
+    @Test
     fun frameworkBrowserReusesPlaybackSessionWithoutPlayingOrStartingForeground() {
         val connected = connectBrowser()
         val children = children(connected)

@@ -1,0 +1,55 @@
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="wrap_content"
+    android:background="@drawable/vivo_music_background">
+    <ImageView android:id="@+id/vivo_music_backdrop" android:layout_width="match_parent"
+        android:layout_height="match_parent" android:scaleType="fitXY" android:importantForAccessibility="no" />
+    <LinearLayout android:id="@+id/vivo_music_card" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:orientation="vertical" android:padding="16dp"
+        android:clipChildren="false" android:clipToPadding="false">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical">
+            <ImageView android:id="@+id/vivo_music_artwork" android:layout_width="48dp" android:layout_height="48dp"
+                android:scaleType="fitCenter" android:importantForAccessibility="no" />
+            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                android:layout_marginStart="12dp" android:orientation="vertical">
+                <TextView android:id="@+id/vivo_music_title" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:textSize="14sp" android:textColor="#FFFFFF" android:maxLines="1" android:ellipsize="end" />
+                <TextView android:id="@+id/vivo_music_artist" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp" android:textSize="12sp" android:textColor="#B8BDC4" android:maxLines="1" android:ellipsize="end" />
+            </LinearLayout>
+        </LinearLayout>
+        <LinearLayout android:id="@+id/vivo_music_progress_row" android:layout_width="match_parent"
+            android:layout_height="28dp" android:layout_marginTop="1dp" android:gravity="center_vertical">
+            <TextView android:id="@+id/vivo_music_elapsed" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:minWidth="24dp" android:textSize="10sp" android:textColor="#999DA2" />
+            <FrameLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+                android:layout_marginHorizontal="8dp">
+                <ProgressBar android:id="@+id/vivo_music_progress" style="?android:attr/progressBarStyleHorizontal"
+                    android:layout_width="match_parent" android:layout_height="3dp" android:layout_gravity="center_vertical"
+                    android:progressDrawable="@drawable/vivo_music_progress" android:max="1000" />
+                <LinearLayout android:id="@+id/vivo_music_seek_targets" android:layout_width="match_parent"
+                    android:layout_height="match_parent" android:orientation="horizontal" />
+            </FrameLayout>
+            <TextView android:id="@+id/vivo_music_duration" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:minWidth="24dp" android:gravity="end" android:textSize="10sp" android:textColor="#999DA2" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="40dp" android:gravity="center_vertical"
+            android:layout_marginStart="-12dp" android:layout_marginEnd="-7dp">
+            <ImageView android:id="@+id/vivo_music_app" android:layout_width="44dp" android:layout_height="40dp" android:padding="8dp" />
+            <LinearLayout android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
+            <ImageView android:id="@+id/vivo_music_previous" android:layout_width="48dp" android:layout_height="40dp"
+                android:padding="6dp" android:src="@drawable/vivo_music_previous" />
+            <LinearLayout android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
+            <CheckBox android:id="@+id/vivo_music_play" android:layout_width="48dp" android:layout_height="40dp"
+                android:button="@null" android:padding="0dp" android:minWidth="0dp" android:minHeight="0dp"
+                android:background="@drawable/vivo_music_play_toggle" android:backgroundTint="@null" />
+            <LinearLayout android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
+            <ImageView android:id="@+id/vivo_music_next" android:layout_width="48dp" android:layout_height="40dp"
+                android:padding="6dp" android:src="@drawable/vivo_music_next" />
+            <LinearLayout android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
+            <!-- Shared favorite vectors have a 2/3 internal scale; match the 24dp visible app mark. -->
+            <CheckBox android:id="@+id/vivo_music_favorite" android:layout_width="44dp" android:layout_height="44dp"
+                android:button="@null" android:padding="0dp" android:minWidth="0dp" android:minHeight="0dp"
+                android:background="@drawable/vivo_music_favorite_toggle" android:backgroundTint="@color/vivo_music_favorite_tint" />
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

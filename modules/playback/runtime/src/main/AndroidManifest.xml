@@ -30,6 +30,8 @@
             tools:ignore="ExportedService">
             <intent-filter>
                 <action android:name="android.media.browse.MediaBrowserService" />
+                <!-- OriginOS 原子随身听通过此 action 发现媒体浏览服务，复用同一播放会话。 -->
+                <action android:name="com.vivo.musicwidgetmix.support.service" />
             </intent-filter>
         </service>
         <!-- 蓝牙与 Android Auto 必须跨应用读取封面，provider 在每次 openFile 和 getType 时校验 UID 权限或签名 -->
