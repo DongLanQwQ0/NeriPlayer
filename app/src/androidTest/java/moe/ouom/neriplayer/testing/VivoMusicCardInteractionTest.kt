@@ -29,12 +29,32 @@ import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-/** Owns a silent fixture queue only on an explicitly selected, idle emulator. */
+/** Rendering is read-only; playback fixtures require an explicitly selected, idle emulator. */
 @ManualInstrumentedTest
 @RunWith(AndroidJUnit4::class)
 class VivoMusicCardInteractionTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context: Context get() = instrumentation.targetContext
+
+    @Test
+    fun renderControlsWithoutStartingPlayback() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("runVivoCardRender") == "true")
+        instrumentation.runOnMainSync {
+            val preview = card(SongItem(-1L, "Music controls", "Artist", "test", 0L, 60_000L, null))
+            val width = context.resources.displayMetrics.widthPixels
+            preview.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+            preview.layout(0, 0, width, preview.measuredHeight)
+            val bitmap = Bitmap.createBitmap(width, preview.measuredHeight, Bitmap.Config.ARGB_8888)
+            preview.draw(Canvas(bitmap))
+            File(context.getExternalFilesDir(null), "vivo-controls-preview.png").outputStream().use {
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+            }
+            val favorite = preview.findViewById<android.widget.CheckBox>(id("vivo_music_favorite"))
+            assertEquals((44 * context.resources.displayMetrics.density).toInt(), favorite.width)
+            assertFalse(favorite.isChecked)
+        }
+    }
 
     @Test
     fun progressTapSeeksPausedPlaybackAndRejectsThePreviousSong() {

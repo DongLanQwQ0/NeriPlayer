@@ -46,7 +46,7 @@
             <ImageView android:id="@+id/vivo_music_next" android:layout_width="48dp" android:layout_height="40dp"
                 android:padding="6dp" android:src="@drawable/vivo_music_next" />
             <LinearLayout android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
-            <!-- Shared favorite vectors have a 2/3 internal scale; match the 24dp visible app mark. -->
+            <!-- Keep the hit area; the selector insets the heart to the native reference size. -->
             <CheckBox android:id="@+id/vivo_music_favorite" android:layout_width="44dp" android:layout_height="44dp"
                 android:button="@null" android:padding="0dp" android:minWidth="0dp" android:minHeight="0dp"
                 android:background="@drawable/vivo_music_favorite_toggle" android:backgroundTint="@color/vivo_music_favorite_tint" />
