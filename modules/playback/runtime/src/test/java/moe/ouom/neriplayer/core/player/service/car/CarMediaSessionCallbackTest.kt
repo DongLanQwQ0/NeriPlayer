@@ -141,6 +141,7 @@ class CarMediaSessionCallbackTest {
         override fun previous() { calls += "previous" }
         override fun seek(positionMs: Long) { calls += "seek:$positionMs" }
         override fun customAction(action: String, extras: Bundle?) { calls += action }
+        override fun setFavorite(favorite: Boolean) { calls += "favorite:$favorite" }
     }
 
     companion object {

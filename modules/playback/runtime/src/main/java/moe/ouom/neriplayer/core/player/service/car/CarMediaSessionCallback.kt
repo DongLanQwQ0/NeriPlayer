@@ -20,6 +20,7 @@ internal interface CarMediaSessionControlPort {
     fun previous()
     fun seek(positionMs: Long)
     fun customAction(action: String, extras: Bundle?)
+    fun setFavorite(favorite: Boolean)
 }
 
 internal class CarMediaSessionCallback(
@@ -101,6 +102,11 @@ internal class CarMediaSessionCallback(
     }
 
     override fun onSeekTo(pos: Long) = dispatch("seek") { port.seek(pos) }
+
+    override fun onSetRating(rating: android.media.Rating) {
+        if (!rating.isRated || rating.ratingStyle != android.media.Rating.RATING_HEART) return
+        port.runWhenLibraryReady("media_session_rating") { port.setFavorite(rating.hasHeart()) }
+    }
 
     override fun onCustomAction(action: String, extras: Bundle?) = port.runWhenReady("media_session_custom_action") {
         port.customAction(action, extras)

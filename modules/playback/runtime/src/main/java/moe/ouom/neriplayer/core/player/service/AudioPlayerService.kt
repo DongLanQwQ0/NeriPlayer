@@ -754,6 +754,11 @@ class AudioPlayerService : Service() {
             seekFromExternalSurface(positionMs)
         }
         override fun customAction(action: String, extras: Bundle?) = handleMediaSessionCustomAction(action)
+        override fun setFavorite(favorite: Boolean) {
+            val song = PlayerManager.currentSongFlow.value ?: return
+            if (!canToggleFavoriteFromExternalSurface(song)) return
+            if (favorite) PlayerManager.addCurrentToFavorites() else PlayerManager.removeCurrentFromFavorites()
+        }
     })
 
     private fun resumeFromMediaSession() {
@@ -990,6 +995,7 @@ class AudioPlayerService : Service() {
         serviceScope.launch {
             PlayerManager.playlistsFlow.collectSafely("playlistsFlow") {
                 if (!refreshFavoriteSongKeys()) return@collectSafely
+                updateMetadata()
                 updatePlaybackState(force = true)
                 updateNotification()
             }
@@ -997,6 +1003,7 @@ class AudioPlayerService : Service() {
         serviceScope.launch {
             PlayerManager.localPlaylistsReadyFlow.collectSafely("localPlaylistsReadyFlow") {
                 refreshFavoriteSongKeys()
+                updateMetadata()
                 updatePlaybackState(force = true)
                 updateNotification()
             }

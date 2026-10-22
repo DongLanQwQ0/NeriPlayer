@@ -10,13 +10,16 @@ import moe.ouom.neriplayer.core.player.service.artwork.PlaybackArtworkOwner
 import moe.ouom.neriplayer.core.player.service.artwork.PlaybackArtworkSnapshot
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.playback.SleepTimerState
+import moe.ouom.neriplayer.data.identity.stableKey
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
+import org.robolectric.shadows.ShadowBuild
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(AndroidJUnit4::class)
@@ -24,6 +27,23 @@ class PlaybackServiceMetadataPublicationTest {
     private val song = SongItem(1L, "Song", "Artist", "Album", 1L, 60_000L, null)
     private val mediaBitmap = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888)
     private val iconBitmap = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888)
+
+    @Test
+    fun `favorite changes republish native metadata while preview duration stays bounded`() = runTest {
+        ShadowBuild.setManufacturer("vivo")
+        val port = RecordingPort(rejectBitmaps = false)
+        val source = FakeSource().apply { durationMs = 30_000L }
+        val owner = owner(port, source, artworkFor("content://covers/a.jpg"))
+        owner.updateMetadata()
+        source.favorites = setOf(song.stableKey())
+        assertTrue(owner.refreshFavoriteSongKeys())
+        owner.updateMetadata()
+        owner.updateMetadata()
+        assertEquals(2, port.published.size)
+        assertEquals(false, checkNotNull(port.published.first().getRating(MediaMetadata.METADATA_KEY_RATING)).hasHeart())
+        assertEquals(true, checkNotNull(port.published.last().getRating(MediaMetadata.METADATA_KEY_RATING)).hasHeart())
+        assertEquals(30_000L, port.published.last().getLong(MediaMetadata.METADATA_KEY_DURATION))
+    }
 
     @Test
     fun `accepted metadata carries the large artwork once plus the display icon`() = runTest {
@@ -123,6 +143,8 @@ class PlaybackServiceMetadataPublicationTest {
 
     private inner class FakeSource : PlaybackServicePresentationSource {
         var payload = ExternalBluetoothLyricPayload()
+        var favorites: Set<String> = emptySet()
+        var durationMs = 0L
 
         override fun playback() = PlaybackServicePlaybackSnapshot(
             song = song,
@@ -136,10 +158,11 @@ class PlaybackServiceMetadataPublicationTest {
             playbackControlPlaying = true,
             audioRouteMuted = false,
             playbackSpeed = 1f,
+            playerDurationMs = durationMs,
         )
         override fun metadata() = PlaybackServiceMetadataInputs(payload, null, forceSendLyrics = true)
         override fun timer() = PlaybackServiceTimerInputs(SleepTimerState(), "")
-        override fun favoriteSongKeys() = emptySet<String>()
+        override fun favoriteSongKeys() = favorites
         override fun localPlaylistsReady() = true
         override fun isLocalSong(song: SongItem) = false
         override fun shareUrl(song: SongItem): String? = null

@@ -89,8 +89,22 @@ internal fun serviceMediaMetadata(
     addOptionalAlbum(builder, snapshot.album)
     addOptionalDescription(builder, snapshot.displayDescription)
     addArtworkUri(builder, snapshot.artworkUri)
+    if (android.os.Build.MANUFACTURER.equals("vivo", ignoreCase = true)) {
+        // OriginOS 6 Walkman: transport, seek, heart and current/favorite/local lists.
+        builder.putLong("vivomusicmix.media.metadata.support_event",
+            (VIVO_TRANSPORT_EVENTS or VIVO_SEEK_EVENT or VIVO_LIST_EVENTS or
+                if (snapshot.canToggleFavorite) VIVO_FAVORITE_EVENT else 0).toLong())
+        val rating = android.media.Rating.newHeartRating(snapshot.favorite)
+        builder.putRating(MediaMetadata.METADATA_KEY_RATING, rating)
+        builder.putRating(MediaMetadata.METADATA_KEY_USER_RATING, rating)
+    }
     return builder.build()
 }
+
+private const val VIVO_TRANSPORT_EVENTS = 1 or 2 or 4
+private const val VIVO_SEEK_EVENT = 16
+private const val VIVO_FAVORITE_EVENT = 64
+private const val VIVO_LIST_EVENTS = 256 or 512 or 1024
 
 private fun addOptionalAlbum(builder: MediaMetadata.Builder, album: String?) {
     if (album != null) builder.putString(MediaMetadata.METADATA_KEY_ALBUM, album)

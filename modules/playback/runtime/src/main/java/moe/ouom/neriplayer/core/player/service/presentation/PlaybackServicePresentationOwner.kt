@@ -72,6 +72,8 @@ internal data class PlaybackMetadataSnapshot(
     val trackNumber: Long = 0L,
     val numTracks: Long = 0L,
     val artworkUri: String? = null,
+    val favorite: Boolean = false,
+    val canToggleFavorite: Boolean = false,
 )
 
 internal fun resolveServicePlaybackState(snapshot: PlaybackServicePlaybackSnapshot): Int = when {
@@ -94,6 +96,7 @@ internal fun servicePlaybackControlPlaying(snapshot: PlaybackServicePlaybackSnap
 
 internal fun mediaSessionPlaybackActions(): Long =
     PlaybackState.ACTION_PLAY or
+        PlaybackState.ACTION_SET_RATING or
         PlaybackState.ACTION_PAUSE or
         PlaybackState.ACTION_PLAY_PAUSE or
         PlaybackState.ACTION_SKIP_TO_NEXT or
@@ -340,6 +343,11 @@ internal class PlaybackServicePresentationOwner(
             song, text, artworkSnapshot, playback.queue.size, playback.queueIndex,
             carArtwork.observe(song, artworkSnapshot),
             serviceMetadataMediaId(song, playback.queue, playback.queueIndex),
+        ).copy(
+            durationMs = playback.playerDurationMs.takeIf { playback.playerSongPresent && it > 0L }
+                ?: (song?.durationMs ?: 0L).coerceAtLeast(0L),
+            favorite = isFavoriteSong(song),
+            canToggleFavorite = canToggleFavorite(song),
         )
         if (snapshot == lastMetadataSnapshot) return false
         lastMetadataSnapshot = snapshot

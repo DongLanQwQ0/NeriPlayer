@@ -63,7 +63,7 @@ jobs:
       - name: Test presentation and build the isolated debug package
         run: |
           chmod +x gradlew
-          ./gradlew :playback:runtime:testDebugUnitTest --tests '*PlaybackServicePresentationOwnerTest' --tests '*PlaybackNotificationSeekTest' --tests '*VivoMusicOptimisticControlsTest' --console=plain
+          ./gradlew :playback:runtime:testDebugUnitTest --tests '*PlaybackServicePresentationOwnerTest' --tests '*PlaybackNotificationSeekTest' --tests '*VivoMusic*Test' --tests '*CarMediaSessionCallbackTest' --console=plain
           ./gradlew :app:assembleDebug --console=plain
       - name: Package APK and corresponding source
         run: |

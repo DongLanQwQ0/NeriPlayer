@@ -50,6 +50,17 @@ internal class VivoMusicIslandBridge(private val context: Context) {
     private val cardArtwork = VivoMusicCardArtwork(context)
     private var lastInputs: PlaybackServiceNotificationRenderInputs? = null
     private var lastProgressUpdateMs = 0L
+    private var seekIdentity: Pair<String, Long>? = null
+    private var seekIntents: List<PendingIntent> = emptyList()
+    private var seekTargets: List<RemoteViews> = emptyList()
+    private val checkedIntents = mutableMapOf<String, PendingIntent>()
+    private val transportIntents = mutableMapOf<String, PendingIntent>()
+    private val openIntent by lazy {
+        PendingIntent.getActivity(context, ID,
+            PlayerDependencies.presentation.mainActivityIntent(context).apply {
+                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    }
     private data class PendingControls(
         val songKey: String,
         val playing: Boolean? = null,
@@ -156,10 +167,7 @@ internal class VivoMusicIslandBridge(private val context: Context) {
         val title = song.displayName()
         val artist = song.displayArtist()
         cardArtwork.update(inputs.artwork)
-        val open = PendingIntent.getActivity(context, ID,
-            PlayerDependencies.presentation.mainActivityIntent(context).apply {
-                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val open = openIntent
         val icon = cardArtwork.cover?.let(Icon::createWithBitmap)
             ?: Icon.createWithResource(context, CommonR.drawable.ic_notification_small)
         val data = Bundle().apply {
@@ -228,25 +236,10 @@ internal class VivoMusicIslandBridge(private val context: Context) {
             setTextViewText(R.id.vivo_music_duration, formatPlaybackWidgetTime(durationMs).padStart(5, '0'))
             setProgressBar(R.id.vivo_music_progress, 1000, playbackWidgetProgress(inputs.positionMs, durationMs), false)
             removeAllViews(R.id.vivo_music_seek_targets)
-            for (step in 0..NOTIFICATION_SEEK_STEPS) {
-                val position = notificationSeekPosition(durationMs, step) ?: break
-                val target = RemoteViews(context.packageName, R.layout.vivo_music_seek_target).apply {
-                    setContentDescription(R.id.vivo_music_seek_target, context.getString(
-                        R.string.vivo_music_seek_to, formatPlaybackWidgetTime(position),
-                    ))
-                    val intent = Intent(context, AudioPlayerService::class.java)
-                        .setAction(AudioPlayerService.ACTION_SEEK_TO)
-                        .setData(Uri.Builder().scheme("neriplayer-vivo-seek").authority("progress")
-                            .appendPath(song.stableKey()).appendPath(step.toString()).build())
-                        .putExtra(AudioPlayerService.EXTRA_SEEK_POSITION_MS, position)
-                        .putExtra(AudioPlayerService.EXTRA_SEEK_SONG_KEY, song.stableKey())
-                        .putExtra(AudioPlayerService.EXTRA_START_SOURCE, "vivo_music_seek")
-                    setOnClickPendingIntent(R.id.vivo_music_seek_target, PendingIntent.getService(
-                        context, ID + 100 + step, intent,
-                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-                    ))
-                }
-                addView(R.id.vivo_music_seek_targets, target)
+            ensureSeekIntents(song.stableKey(), durationMs)
+            seekTargets.forEachIndexed { step, target ->
+                // Adding a child changes its hierarchy root; never share that mutable root between cards.
+                addStableView(R.id.vivo_music_seek_targets, target.clone(), step)
             }
             setCompoundButtonChecked(R.id.vivo_music_favorite, inputs.favorite)
             setContentDescription(R.id.vivo_music_favorite, context.getString(favoriteActionTitle(inputs.favorite)))
@@ -274,17 +267,45 @@ internal class VivoMusicIslandBridge(private val context: Context) {
             setViewPadding(R.id.vivo_music_card, horizontal, top, horizontal, (18 * density).toInt())
         }
 
-    private fun checkedControl(action: String, songKey: String, request: Int) = PendingIntent.getService(
+    private fun ensureSeekIntents(songKey: String, durationMs: Long) {
+        val identity = songKey to durationMs
+        if (identity == seekIdentity) return
+        seekIdentity = identity
+        checkedIntents.clear()
+        seekIntents = if (durationMs <= 0L) emptyList() else (0..NOTIFICATION_SEEK_STEPS).map { step ->
+            val intent = Intent(context, AudioPlayerService::class.java)
+                .setAction(AudioPlayerService.ACTION_SEEK_TO)
+                .setData(Uri.Builder().scheme("neriplayer-vivo-seek").authority("progress")
+                    .appendPath(songKey).appendPath(step.toString()).build())
+                .putExtra(AudioPlayerService.EXTRA_SEEK_POSITION_MS, notificationSeekPosition(durationMs, step)!!)
+                .putExtra(AudioPlayerService.EXTRA_SEEK_SONG_KEY, songKey)
+                .putExtra(AudioPlayerService.EXTRA_START_SOURCE, "vivo_music_seek")
+            PendingIntent.getService(context, ID + 100 + step, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        }
+        // Cache target actions and descriptions; each card gets its own hierarchy via clone().
+        seekTargets = seekIntents.mapIndexed { step, intent ->
+            RemoteViews(context.packageName, R.layout.vivo_music_seek_target).apply {
+                val position = checkNotNull(notificationSeekPosition(durationMs, step))
+                setContentDescription(R.id.vivo_music_seek_target, context.getString(
+                    R.string.vivo_music_seek_to, formatPlaybackWidgetTime(position),
+                ))
+                setOnClickPendingIntent(R.id.vivo_music_seek_target, intent)
+            }
+        }
+    }
+
+    private fun checkedControl(action: String, songKey: String, request: Int) = checkedIntents.getOrPut(action) { PendingIntent.getService(
         context, ID + request, Intent(context, AudioPlayerService::class.java).setAction(action)
             .setData(Uri.Builder().scheme("neriplayer-vivo-control").authority("checked").appendPath(songKey).build())
             .putExtra(AudioPlayerService.EXTRA_SEEK_SONG_KEY, songKey),
         // Only this explicit in-app component may receive the system-added EXTRA_CHECKED value.
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
-    )
+    ) }
 
-    private fun control(action: String, request: Int) = PendingIntent.getService(context, ID + request,
+    private fun control(action: String, request: Int) = transportIntents.getOrPut(action) { PendingIntent.getService(context, ID + request,
         Intent(context, AudioPlayerService::class.java).setAction(action),
-        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE) }
 
     fun clear() {
         if (supported) runCatching {
@@ -297,6 +318,10 @@ internal class VivoMusicIslandBridge(private val context: Context) {
         published = false
         lastInputs = null
         pendingControls = null
+        seekIdentity = null
+        seekIntents = emptyList()
+        seekTargets = emptyList()
+        checkedIntents.clear()
         handler.removeCallbacks(rollback)
     }
 }

@@ -71,6 +71,16 @@ class CarMediaBrowserIntegrationTest {
     }
 
     @Test
+    fun vivoQueueDirectoryReturnsTheExistingPlaybackQueueWithoutStartingPlayback() {
+        val connected = connectBrowser()
+        val nativeQueue = children(connected, "vivomusicmix_current_list")
+        assertEquals(PlayerManager.currentQueueFlow.value.size.coerceAtMost(50), nativeQueue.size)
+        assertTrue(nativeQueue.all { it.isPlayable && !it.isBrowsable })
+        assertFalse(hasActivePlayback())
+        assertFalse(AudioPlayerService.isForegroundActiveForDiagnostics())
+    }
+
+    @Test
     fun vivoDiscoveryReusesTheTrustedBrowserAndPlaybackSession() {
         fun service(action: String) = context.packageManager.queryIntentServices(
             Intent(action).setPackage(context.packageName), 0,

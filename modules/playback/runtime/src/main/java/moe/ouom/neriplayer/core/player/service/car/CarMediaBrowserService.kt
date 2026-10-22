@@ -73,6 +73,11 @@ class CarMediaBrowserService : MediaBrowserServiceCompat() {
     }
 
     override fun onLoadChildren(parentId: String, result: Result<List<MediaBrowserCompat.MediaItem>>) {
+        if (isVivoMusicList(parentId)) {
+            rememberParent(parentId)
+            load(result) { vivoMusicChildren(this, it, parentId, null) }
+            return
+        }
         val hints = browserRootHints
         val flags = rootHintInt(hints, MediaConstants.BROWSER_ROOT_HINTS_KEY_ROOT_CHILDREN_SUPPORTED_FLAGS)
         val rootId = carBrowserRootId(hints, flags)
@@ -89,6 +94,15 @@ class CarMediaBrowserService : MediaBrowserServiceCompat() {
 
     private fun rootHintInt(hints: Bundle?, key: String): Int? =
         hints?.takeIf { it.containsKey(key) }?.getInt(key)
+
+    override fun onLoadChildren(parentId: String, result: Result<List<MediaBrowserCompat.MediaItem>>, options: Bundle) {
+        if (!isVivoMusicList(parentId)) {
+            super.onLoadChildren(parentId, result, options)
+            return
+        }
+        rememberParent(parentId)
+        load(result) { vivoMusicChildren(this, it, parentId, options) }
+    }
 
     override fun onLoadItem(itemId: String, result: Result<MediaBrowserCompat.MediaItem>) {
         load(result) { it.getItem(itemId)?.let(::mediaItem) }

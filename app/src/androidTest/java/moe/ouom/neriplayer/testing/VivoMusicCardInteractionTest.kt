@@ -5,9 +5,12 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.drawable.BitmapDrawable
 import android.os.Build
 import android.os.SystemClock
 import android.view.View
+import android.view.ViewGroup
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.RemoteViews
 import androidx.test.core.app.ActivityScenario
@@ -20,6 +23,7 @@ import moe.ouom.neriplayer.data.model.SongItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Assume.assumeFalse
@@ -47,6 +51,7 @@ class VivoMusicCardInteractionTest {
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
             preview.layout(0, 0, width, preview.measuredHeight)
             val bitmap = Bitmap.createBitmap(width, preview.measuredHeight, Bitmap.Config.ARGB_8888)
+            assertLiveImages(preview)
             preview.draw(Canvas(bitmap))
             File(context.getExternalFilesDir(null), "vivo-controls-preview.png").outputStream().use {
                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
@@ -57,6 +62,24 @@ class VivoMusicCardInteractionTest {
             val targets = preview.findViewById<LinearLayout>(id("vivo_music_seek_targets"))
             assertEquals(41, targets.childCount)
             for (index in 0 until targets.childCount) assertNull(targets.getChildAt(index).background)
+        }
+    }
+
+    @Test
+    fun progressReapplyReusesTheExistingTapTargets() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("runVivoCardRender") == "true")
+        instrumentation.runOnMainSync {
+            val song = SongItem(-1L, "Music controls", "Artist", "test", 0L, 60_000L, null)
+            val remote = cardRemoteViews(song)
+            val preview = remote.apply(context, null)
+            val row = preview.findViewById<LinearLayout>(id("vivo_music_seek_targets"))
+            val original = (0 until row.childCount).map(row::getChildAt)
+            assertEquals(41, original.size)
+            cardRemoteViews(song).reapply(context, preview)
+            assertEquals(41, row.childCount)
+            original.forEachIndexed { index, target ->
+                assertSame("Progress updates must reuse target $index", target, row.getChildAt(index))
+            }
         }
     }
 
@@ -140,7 +163,9 @@ class VivoMusicCardInteractionTest {
         await("Fixture did not pause") { !PlayerManager.isPlayingFlow.value && !PlayerManager.playWhenReadyFlow.value }
     }
 
-    private fun card(song: SongItem): View {
+    private fun card(song: SongItem): View = cardRemoteViews(song).apply(context, null)
+
+    private fun cardRemoteViews(song: SongItem): RemoteViews {
         val type = Class.forName("moe.ouom.neriplayer.core.player.service.presentation.VivoMusicIslandBridge")
         val bridge = type.getDeclaredConstructor(Context::class.java).newInstance(context)
         val lyricType = Class.forName("moe.ouom.neriplayer.core.player.service.notification.StatusBarLyricNotificationState")
@@ -151,10 +176,29 @@ class VivoMusicCardInteractionTest {
         )
         val notification = type.declaredMethods.single { it.name.startsWith("notification$") }
             .invoke(bridge, inputs, 0) as Notification
-        return notification.extras.getParcelable("notification.superx.customTemplate", RemoteViews::class.java)!!.apply(context, null)
+        val remote = notification.extras.getParcelable("notification.superx.customTemplate", RemoteViews::class.java)!!
+        // Match the actual Binder boundary: system hosts render a parcelled RemoteViews, not its local bitmap cache.
+        val parcel = android.os.Parcel.obtain()
+        val delivered = try {
+            remote.writeToParcel(parcel, 0)
+            parcel.setDataPosition(0)
+            RemoteViews.CREATOR.createFromParcel(parcel)
+        } finally {
+            parcel.recycle()
+        }
+        return delivered
     }
 
     private fun id(name: String) = context.resources.getIdentifier(name, "id", context.packageName)
+
+    private fun assertLiveImages(view: View) {
+        val bitmap = ((view as? ImageView)?.drawable as? BitmapDrawable)?.bitmap
+        if (bitmap != null) {
+            val name = if (view.id == View.NO_ID) view.javaClass.simpleName else context.resources.getResourceName(view.id)
+            assertFalse("Recycled image in $name before rendering", bitmap.isRecycled)
+        }
+        if (view is ViewGroup) for (index in 0 until view.childCount) assertLiveImages(view.getChildAt(index))
+    }
 
     private fun await(message: String, condition: () -> Boolean) {
         val deadline = SystemClock.elapsedRealtime() + 15_000L

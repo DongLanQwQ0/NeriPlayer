@@ -115,6 +115,7 @@ internal class AndroidPlaybackServicePresentationPort(
         mediaSession = MediaSession(context, "NeriPlayerSession").apply {
             setCallback(callback)
             setSessionActivity(mainActivityPendingIntent())
+            setRatingType(android.media.Rating.RATING_HEART)
             setPlaybackToLocal(audioAttributes)
             isActive = true
         }
