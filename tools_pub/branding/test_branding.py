@@ -1,6 +1,7 @@
 """Branding resource checks: python -B -m unittest discover -s tools_pub/branding."""
 
 import unittest
+import colorsys
 import xml.etree.ElementTree as ET
 
 from PIL import Image
@@ -22,9 +23,15 @@ class BrandingTest(unittest.TestCase):
         with Image.open(OUTPUT) as artwork:
             self.assertEqual((432, 432), artwork.size)
 
-    def test_adaptive_icon_background_is_transparent(self):
+    def test_adaptive_icon_background_is_bright_low_saturation_orange(self):
         colors = ET.parse(RESOURCES / "values/colors.xml").getroot()
-        self.assertEqual("#00000000", colors.find("color[@name='vivo_brand_background']").text)
+        color = colors.find("color[@name='vivo_brand_background']").text
+        self.assertEqual("#FFF1E1", color)
+        rgb = tuple(int(color[i:i + 2], 16) / 255 for i in (1, 3, 5))
+        hue, saturation, brightness = colorsys.rgb_to_hsv(*rgb)
+        self.assertTrue(20 <= hue * 360 <= 40)
+        self.assertLessEqual(saturation, 0.15)
+        self.assertGreaterEqual(brightness, 0.95)
         for name in ("ic_launcher", "ic_launcher_round"):
             icon = ET.parse(RESOURCES / f"mipmap-anydpi/{name}.xml").getroot()
             self.assertEqual(

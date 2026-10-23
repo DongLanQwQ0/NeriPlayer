@@ -2,13 +2,15 @@ NeriPlayer 适配版标识（2026-10-23）
 ================================
 
 应用显示名称统一为 NeriPlayer，不附加 vivo。
-图标采用用户选定的橙色折叠三角丝带，外部背景和中央三角留白均透明。
-原始透明画稿：tools_pub/branding/vivo-orange.png。
+图标采用用户选定的橙色折叠三角丝带，背景为高亮度、低饱和度的浅暖橙 #FFF1E1。
+背景由 Android 资源背景层提供，前景画稿及中央三角开口保留透明通道，
+不重新生成或改动用户已选定的丝带造型。原始前景：tools_pub/branding/vivo-orange.png。
 
 运行 python tools_pub/branding/export_vivo_icon.py（依赖 Pillow），生成
 app/src/vivoRelease/res/drawable-nodpi/vivo_brand_art.png。
 导出保留 RGBA，尺寸 432×432（78,833 字节），1254×1254 原图不进入 APK。
-自适应图标背景层同样为全透明；前景四侧留白为 12.963%（108dp 中的 14dp），
+自适应图标背景层为 #FFF1E1（HSV 色相 32°、饱和度约 11.8%、亮度 100%）；
+前景四侧留白为 12.963%（108dp 中的 14dp），
 随显示尺寸缩放；保留同形单色图标。系统主题附加的外框由用户主题控制。
 
 关于区域保留 NeriPlayer / GPLv3 原文，追加“适配版作者：DongLan”。
@@ -20,15 +22,9 @@ app/src/vivoRelease/res/drawable-nodpi/vivo_brand_art.png。
 移除背景要求保留橙金色、丝带折叠结构、光影和留白，不添加图形或文字。
 
 资源回归检查：python -B -m unittest discover -s tools_pub/branding -v
-覆盖源图与导出图透明通道、中央开口、自适应背景、三个语言资源的准确名称与署名。
+覆盖源图与导出图透明通道、中央开口、浅橙背景色与亮度/饱和度，以及三个语言资源
+的准确名称与署名。
 
-验收
-三个资源回归检查通过，assembleVivoRelease 成功（14m49s）。
-签名包 NeriPlayer-orange-transparent.apk 位于 F:\Android\NeriPlayerChecks，
-14,589,676 字节，versionCode 214925341；固定证书与非 debuggable 检查通过。
-实际 APK 中默认 / 中文 / 英文名称均为 NeriPlayer，适配署名不变，背景色为零 alpha。
-已读取 APK 内的 432×432 RGBA 图标，确认外部与中央开口像素透明。
-经用户手动允许后在 vivo V2527A 上覆盖安装成功。读取手机实际安装包也确认三个名称
-均正确；关闭并重开本轮查看的系统应用信息后，旧缓存名称已刷新为 NeriPlayer。
-已实际查看新名称与图标，启动成功（本次 TotalTime 602ms），手机返回 Home。
-系统主题仍附加自己的图标外框，未修改主题，未清应用数据，未发布 GitHub Release。
+设备显示
+系统主题仍可附加自己的图标外框；不修改用户主题，不清理应用数据，不发布已撤回版本。
+名称、署名、独立包名和固定签名不随背景调整而改变。

@@ -115,13 +115,25 @@ SuperX 通知启动。测试通知在服务所在进程准备，避免通过启�
 仅在独占手机操作窗口执行这些测试，避免与其他 UI 自动化冲突。
 
 测试场景配置
-应用不会注册或强开系统场景。以下 instrumentation 入口仅供已授权 ADB 测试使用：
+应用不会注册或强开系统场景。instrumentation 单包配置入口仅适用于该场景只配置一个
+测试包的情况；需要应用包和测试包使用相同签名，系统安装确认由用户操作。
 
-adb -s SERIAL shell am instrument -w -e configureVivoScene true -e vivoSceneEnabled true -e class moe.ouom.neriplayer.testing.VivoMusicIslandDeviceTest#configureSceneForExplicitAdbTest moe.ouom.neriplayer.debug.test/moe.ouom.neriplayer.testing.NeriPlayerInstrumentationTestRunner
+该固件 setSuperXInfosSceneList 的四个列表按场景行对应；每行第三、第四项内部
+分别用连字符连接多个包名与开关。同名场景行会覆盖旧行，不能为每个包各写一行，
+也不能在多包共存时直接运行旧单包配置或 Restore-VivoMusic.ps1。
 
-把 vivoSceneEnabled 改为 false 可关闭测试场景。
-配置仅影响已安装的目标包名；debug 包与正式包必须分别处理。
-需要应用包和测试包使用相同签名。系统安装确认由用户操作。
+当前手机 NERIPLAYER_MUSIC 的配置为一行：
+sceneList=[NERIPLAYER_MUSIC]
+switchList=[true]
+pkgNameList=[moe.ouom.neriplayer.debug-moe.ouom.neriplayer.vivo]
+pkgSwitchList=[true-true]
+
+2026-10-23，经用户明确授权补正式包场景，两个包的 getSceneStatus 均确认 true，
+登记前后场景表比较仅增加正式包；其他原有配置保留。正式包已实际发布
+VIVO_SUPERX_TAG / ID1313887817 / neriplayer_vivo_music_island，手机顶部出现封面与音律动画。
+无需重装或重构建应用，播放状态未改。当前设备 ADB shell 的 INotificationManager 查询
+签名为 getSceneStatus(String packageName, String scene, int userId)，当前用户为 0。
+本机调用源与前后配置记录保存在 F:\Android\NeriPlayerChecks\scene-tool。
 
 回归测试
 CarMediaBrowserIntegrationTest#vivoDiscoveryReusesTheTrustedBrowserAndPlaybackSession
