@@ -30,3 +30,12 @@ app/src/vivoRelease/res/drawable-nodpi/vivo_brand_art.png。
 设备显示
 系统主题仍可附加自己的图标外框；不修改用户主题，不清理应用数据，不发布已撤回版本。
 名称、署名、独立包名和固定签名不随背景调整而改变。
+
+本次验收
+四项资源检查通过；圆形、较大圆角和轻圆角三类常见遮罩未裁掉主体实心像素。
+同尺寸真机卡片中，橙色主体的像素边界由 64×67 缩至 51×53，符合 80% 缩放及像素取整。
+最终签名包 F:\Android\NeriPlayerChecks\NeriPlayer-pale-orange-album-blur-80.apk，
+versionCode214929820 / versionName c27e6ec9.10232244-vivo，14,589,676 字节。
+assembleVivoRelease 成功，固定证书、非 debug、三个语言名称、署名、#FFF1E1 及前景
+内缩比例均从实际 APK 核对。USB 覆盖安装成功，手机实际版本一致，原子场景仍开启。
+已实际查看新主体与专辑模糊背景的原子岛展开卡片，播放正常；未清数据或发布 Release。
