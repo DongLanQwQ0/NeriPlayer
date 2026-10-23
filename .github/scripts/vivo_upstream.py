@@ -13,6 +13,8 @@ import zipfile
 UPSTREAM = "cwuom/NeriPlayer"
 # First upstream Release enrolled in the optimized .vivo distribution.
 FIRST_RELEASE_ID = 421509148
+# Explicitly withdrawn distributions must not be retried as incomplete drafts.
+WITHDRAWN_RELEASE_IDS = {421509148}
 REQUIRED_ASSETS = {"NeriPlayer-vivo.apk", "NeriPlayer-vivo-source.zip"}
 
 
@@ -44,6 +46,7 @@ def pending_release(own, upstream):
             REQUIRED_ASSETS.issubset({a["name"] for a in r["assets"] if a["size"] > 0})}
     pending = sorted(
         (r for r in upstream if not r["draft"] and r["id"] >= FIRST_RELEASE_ID and
+         r["id"] not in WITHDRAWN_RELEASE_IDS and
          f"vivo-release-{r['id']}" not in done),
         key=lambda r: (r["published_at"], r["id"]),
     )

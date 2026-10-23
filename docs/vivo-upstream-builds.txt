@@ -5,11 +5,10 @@
 上游仓库：cwuom/NeriPlayer
 入口：.github/workflows/vivo_upstream.yml
 
-首个已验证发布（2026-10-23）
-https://github.com/DongLanQwQ0/NeriPlayer/releases/tag/vivo-release-421509148
-工作流 39951932512 已完成识别、合并、测试、构建、签名和发布，源码提交 436e31a1。
-实际下载核对了独立包名、不可调试属性、固定证书及四个子模块完整源码。
-APK versionCode 214921290；原版、debug 与独立正式版继续并存。
+已撤回版本（2026-10-23）
+vivo-release-421509148 已按用户要求撤回为草稿，不再公开发布附件。
+该上游 Release ID 已加入 WITHDRAWN_RELEASE_IDS，自动流程不会重新发布此版本。
+既有构建、签名及源码验证记录保留；软件包和手机上已安装的应用未因此修改。
 
 发布流程
 每半小时检查上游新 Release，也可手动运行。以 Release 标签解析出的精确提交为输入，
@@ -23,6 +22,7 @@ APK versionCode 214921290；原版、debug 与独立正式版继续并存。
 构建固定使用本轮合并 SHA，不会在构建过程中切换到后来更新的 master。
 完成标记为非草稿 Release，以及非空 APK、对应源码 ZIP 两个附件。
 失败草稿在重试时补齐附件后发布；已经发布的版本不会因定时检查而反复覆盖。
+明确撤回的版本从重试范围排除；后续上游 Release 仍正常跟随。
 
 优化版 APK
 使用 :app:assembleVivoRelease，包名 moe.ouom.neriplayer.vivo，显示名称 NeriPlayer vivo。

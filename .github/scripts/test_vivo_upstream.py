@@ -9,7 +9,7 @@ from unittest.mock import patch
 import vivo_upstream as follow
 
 
-def release(number=follow.FIRST_RELEASE_ID):
+def release(number=follow.FIRST_RELEASE_ID + 1):
     return dict(id=number, tag_name=f"v{number}", draft=False, prerelease=False,
                 published_at="2026-10-23T06:18:02Z", assets=[])
 
@@ -24,12 +24,19 @@ class UpstreamReleaseTests(unittest.TestCase):
         self.assertIsNone(follow.pending_release([], [release(follow.FIRST_RELEASE_ID - 1), draft]))
 
     def test_processes_one_release_at_a_time_in_publication_order(self):
-        later = release(follow.FIRST_RELEASE_ID + 1)
+        later = release(follow.FIRST_RELEASE_ID + 2)
         later["published_at"] = "2026-10-24T00:00:00Z"
-        self.assertEqual(follow.FIRST_RELEASE_ID, follow.pending_release([], [later, release()])["id"])
+        self.assertEqual(follow.FIRST_RELEASE_ID + 1, follow.pending_release([], [later, release()])["id"])
+
+    def test_withdrawn_release_is_skipped_without_blocking_the_next_release(self):
+        withdrawn = release(421509148)
+        self.assertIsNone(follow.pending_release([], [withdrawn]))
+        draft = dict(tag_name="vivo-release-421509148", draft=True, assets=[])
+        self.assertIsNone(follow.pending_release([draft], [withdrawn]))
+        self.assertEqual(release(), follow.pending_release([draft], [withdrawn, release()]))
 
     def test_only_complete_non_draft_release_is_finished(self):
-        own = dict(tag_name=f"vivo-release-{follow.FIRST_RELEASE_ID}", draft=False, assets=[
+        own = dict(tag_name=f"vivo-release-{follow.FIRST_RELEASE_ID + 1}", draft=False, assets=[
             {"name": name, "size": 100} for name in follow.REQUIRED_ASSETS])
         self.assertIsNone(follow.pending_release([own], [release()]))
         self.assertIsNotNone(follow.pending_release([dict(own, draft=True)], [release()]))
@@ -56,7 +63,7 @@ class UpstreamReleaseTests(unittest.TestCase):
             self.assertEqual("b" * 40, values["sha"])
             self.assertEqual("false", values["prerelease"])
             git.assert_any_call("fetch", "--no-tags", f"https://github.com/{follow.UPSTREAM}.git",
-                                f"refs/tags/v{follow.FIRST_RELEASE_ID}")
+                                f"refs/tags/v{follow.FIRST_RELEASE_ID + 1}")
 
     def test_discovery_does_not_fetch_or_merge_when_no_release_is_pending(self):
         with tempfile.TemporaryDirectory() as directory:
