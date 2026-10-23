@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- The themed icon keeps the ribbon outline and its triangular opening. -->
+    <group
+        android:scaleX="0.7407407"
+        android:scaleY="0.7407407"
+        android:translateX="14"
+        android:translateY="14">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:fillType="evenOdd"
+            android:pathData="M39,15.5C42,15.5 45,17 48,19L86,41.5C91,44.5 93,48.5 93,54L93,61C93,65 90,68 85,71L43,91C39,93 35,92 32,89L22,78C20,75.5 19.5,73 19.5,69L19.5,31C19.5,27 21,25 24,23L34,17C36,16 37.5,15.5 39,15.5ZM45.5,42L45.5,65.8L68.8,54Z" />
+    </group>
+</vector>

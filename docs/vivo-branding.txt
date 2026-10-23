@@ -1,0 +1,27 @@
+vivo 适配版标识（2026-10-23）
+============================
+
+用户选定全新图标方案 A，并确认使用橙色版本。原始选定画稿保存为
+tools_pub/branding/vivo-orange.png；不重新生成或改画其造型。
+运行 python tools_pub/branding/export_vivo_icon.py（依赖 Pillow），生成
+app/src/vivoRelease/res/drawable-nodpi/vivo_brand_art.webp。
+导出为 432×432 的无损 WebP（111,626 字节），原始 1254×1254 PNG 不进入 APK。
+自适应前景四侧留白为 12.963%（108dp 画布中的 14dp），随显示尺寸缩放，
+保证圆形与圆角遮罩中的完整显示，并提供同形单色图标。
+
+关于区域保留 NeriPlayer / GPLv3 原文，追加“适配版作者：DongLan”。
+仅 vivoRelease 资源覆盖生效；原版、debug、上游作者版权、许可证和 GitHub 入口不变。
+本次不重新发布已撤回的 vivo-release-421509148。
+
+图稿来源：内置 image_gen，在用户选定 A 后进行保形改色。
+改色要求：仅将蓝/青改为橙/金，保留折叠丝带、中央三角负形、光影和构图，背景近黑。
+
+验收
+assembleVivoRelease 成功；APK 包名仍为 moe.ouom.neriplayer.vivo，非 debuggable，
+签名校验通过并匹配原有固定 vivo release 证书。
+实际 APK 的默认 / 中文 / 英文资源均包含准确署名；彩色和单色图标指向本次资源。
+已在 vivo V2527A 上覆盖安装，启动成功（本次 TotalTime 822ms），实际查看了系统应用
+信息中的橙色图标和软件关于页的完整署名、GPLv3 与上游 GitHub 入口。
+系统当前主题会给应用图标加紫色外框，保留用户主题设置。未清理任何应用数据。
+安装包：F:\Android\NeriPlayerChecks\NeriPlayer-vivo-orange.apk（14,622,445 字节）。
+versionCode 214924406；本次未发布 GitHub Release。
