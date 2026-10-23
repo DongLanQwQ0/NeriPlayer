@@ -48,6 +48,24 @@ class BrandingTest(unittest.TestCase):
                 self.assertIn("GPLv3", footer)
                 self.assertIn("适配版作者：DongLan", footer)
 
+    def test_artwork_is_eighty_percent_without_resizing_the_icon_canvas(self):
+        namespace = "{http://schemas.android.com/apk/res/android}"
+        foreground = ET.parse(RESOURCES / "drawable/vivo_brand_foreground.xml").getroot()
+        inset = float(foreground.get(namespace + "insetLeft").rstrip("%")) / 100
+        for side in ("insetTop", "insetRight", "insetBottom"):
+            self.assertEqual(foreground.get(namespace + "insetLeft"), foreground.get(namespace + side))
+        scale = 1 - 2 * inset
+        previous_scale = 80 / 108  # Previous foreground: 14dp margins on a 108dp canvas.
+        self.assertAlmostEqual(0.8, scale / previous_scale, places=5)
+        monochrome = ET.parse(RESOURCES / "drawable/vivo_brand_monochrome.xml").getroot()
+        self.assertEqual("108dp", monochrome.get(namespace + "width"))
+        self.assertEqual("108dp", monochrome.get(namespace + "height"))
+        group = monochrome.find("group")
+        self.assertAlmostEqual(scale, float(group.get(namespace + "scaleX")), places=5)
+        self.assertAlmostEqual(scale, float(group.get(namespace + "scaleY")), places=5)
+        self.assertAlmostEqual(inset * 108, float(group.get(namespace + "translateX")), places=4)
+        self.assertAlmostEqual(inset * 108, float(group.get(namespace + "translateY")), places=4)
+
 
 if __name__ == "__main__":
     unittest.main()

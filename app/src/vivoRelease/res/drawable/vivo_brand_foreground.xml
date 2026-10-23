@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Keep the approved artwork inside adaptive launchers' circular safe region. -->
 <inset xmlns:android="http://schemas.android.com/apk/res/android"
-    android:insetLeft="12.963%"
-    android:insetTop="12.963%"
-    android:insetRight="12.963%"
-    android:insetBottom="12.963%">
+    android:insetLeft="20.3704%"
+    android:insetTop="20.3704%"
+    android:insetRight="20.3704%"
+    android:insetBottom="20.3704%">
     <bitmap
         android:src="@drawable/vivo_brand_art"
         android:gravity="fill"
