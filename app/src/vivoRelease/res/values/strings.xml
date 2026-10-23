@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name" translatable="false">NeriPlayer vivo</string>
+    <string name="app_name" translatable="false">NeriPlayer</string>
     <string name="about_app_footer">NeriPlayer • GPLv3 • 由你可爱地驱动\n适配版作者：DongLan</string>
 </resources>

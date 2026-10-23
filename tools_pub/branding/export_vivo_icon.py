@@ -11,16 +11,16 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = Path(__file__).with_name("vivo-orange.png")
-OUTPUT = ROOT / "app/src/vivoRelease/res/drawable-nodpi/vivo_brand_art.webp"
+OUTPUT = ROOT / "app/src/vivoRelease/res/drawable-nodpi/vivo_brand_art.png"
 FOREGROUND_SIZE = 108 * 4  # 108dp adaptive foreground at xxxhdpi.
 
 
 def main():
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     with Image.open(SOURCE) as artwork:
-        artwork.convert("RGB").resize(
+        artwork.convert("RGBA").resize(
             (FOREGROUND_SIZE, FOREGROUND_SIZE), Image.Resampling.LANCZOS
-        ).save(OUTPUT, format="WEBP", lossless=True, method=6)
+        ).save(OUTPUT, format="PNG", optimize=True)
     print(f"Exported {OUTPUT.relative_to(ROOT)} ({OUTPUT.stat().st_size:,} bytes)")
 
 
