@@ -1,0 +1,48 @@
+vivo 独立正式版性能验收（2026-10-23）
+=================================
+
+设备：vivo V2527A / PD2527，OriginOS 6，Android 16 / API 36。
+本地候选：538b6eba.10231927-vivo，versionCode 214918026；包含随后提交的 Cookie 锁顺序修复。
+包名 moe.ouom.neriplayer.vivo，arm64-v8a，非 debuggable，R8 与资源缩减启用。
+独立固定 release 签名；与原版、debug 版及其数据并存。
+
+启动阻塞及修复
+初始候选在完成首次引导后，三次冷启动均超时。应用自身线程采样并使用对应 R8 mapping
+还原后确认：主线程在 HomeViewModel 构造时持有 neteaseClient 的 lazy 锁，等待 Cookie
+仓库锁；后台 Cookie 观察器持有仓库锁，等待相同 lazy 锁，形成死锁。
+现在在注册观察器时先取得仓库和客户端引用，再收集 Cookie；持有仓库锁的回调只操作
+已经初始化的客户端。withCurrentCookiesIfMatches 仍阻止过期账号快照恢复旧会话。
+加密仓库构造、账号观察器及 YouTube 启动预热放在既有 IO scope，代理引导仍同步完成。
+临时线程采样代码已移除，正式版不附带此次诊断探针。
+
+三次冷启动
+am force-stop 仅作用于被测包，随后 am start -W；不清理任何应用数据。
+启动后三秒读取 dumpsys gfxinfo。时间单位毫秒，janky 使用该工具的非 legacy 统计。
+
+                         第一次       第二次       第三次
+旧 debug 启动            2593         2508         2849
+新 vivoRelease 启动      1255          792          564
+旧 debug 启动 janky      91.67%       87.50%       91.67%
+新 vivoRelease janky      3.33%        1.85%        3.53%
+新 vivoRelease 帧数         90          108           85
+
+设置页滑动及导航
+设置页进入稳定后重置 gfxinfo，执行三组上滑/下滑，每次手势 500ms，间隔 300ms。
+旧 debug：477 帧，83 janky，17.40%，p95 32ms。
+新 vivoRelease：606 帧，4 janky，0.66%，p95 11ms。
+新 vivoRelease 的两组首页/媒体库/设置导航：532 帧，6 janky，1.13%，p95 15ms。
+实际检查了启动后的首页、设置与媒体库界面，导航可用。
+
+解释与复现条件
+两包没有统一账号数据或主题：旧 debug 为现有真实数据与玻璃样式，新独立正式版为
+单独配置与上游新版默认样式。冷启动基线采于同日下午，正式版通过无线 ADB 测试，
+耗时取设备内部 TotalTime。上述结果用于实际版本验收，不是仅隔离编译类型变量的 A/B。
+同一包三次冷启动也会受到系统文件缓存、JIT 和网络加载状态影响。
+原始启动输出、gfxinfo、压缩截图和还原堆栈位于本机 F:\Android\NeriPlayerChecks。
+
+发布前检查
+播放元数据、presentation、vivo、seek、车载相关定向 JVM 测试通过。
+账号引导、Cookie 观察器锁顺序与首帧挂载策略共 15 项启动检查通过。
+Release 跟随脚本 11 项检查及 actionlint 通过；包名、不可调试属性、版本号与固定证书核对。
+新包的 vivo 场景权限需独立配置。此次性能验收不代表此前音乐岛通知去重、连续绘制原型
+已接入生产代码；这些实现与系统宿主验收仍按 vivo-music-integration.txt 继续。

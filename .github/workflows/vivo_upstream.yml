@@ -81,7 +81,7 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew '-Dorg.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8' :playback:runtime:testDebugUnitTest --tests '*PlaybackServicePresentationOwnerTest' --tests '*PlaybackServiceMetadataPublicationTest' --tests '*PlaybackNotificationSeekTest' --tests '*VivoMusic*Test' --tests '*CarMediaSessionCallbackTest' --console=plain
-          ./gradlew '-Dorg.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8' :app:testDebugUnitTest --tests '*AppContainerBootstrapTest' --tests '*NeriAppStartupGlassGatePolicyTest' --console=plain
+          ./gradlew '-Dorg.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8' :app:testDebugUnitTest --tests '*AppContainer*Test' --tests '*NeriAppStartupGlassGatePolicyTest' --console=plain
       - name: Build the optimized, non-debuggable vivo release
         env:
           UPSTREAM_LABEL: ${{ needs.discover.outputs.label }}

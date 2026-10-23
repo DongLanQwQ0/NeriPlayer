@@ -606,10 +606,13 @@ object AppContainer {
     }
 
     private fun startCookieObserver() {
-        neteaseCookieRepo.cookieFlow
+        val repository = neteaseCookieRepo
+        // Resolve the lazy client before taking the cookie lock: its initializer also reads cookies.
+        val client = neteaseClient
+        repository.cookieFlow
             .onEach { cookies ->
-                neteaseCookieRepo.withCurrentCookiesIfMatches(cookies) { currentCookies ->
-                    neteaseClient.setPersistedCookies(currentCookies)
+                repository.withCurrentCookiesIfMatches(cookies) { currentCookies ->
+                    client.setPersistedCookies(currentCookies)
                 }
             }
             .launchIn(scope)
