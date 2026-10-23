@@ -1,63 +1,57 @@
-自动跟随上游构建
-================
+自动跟随上游 Release
+===================
 
 目标仓库：DongLanQwQ0/NeriPlayer
-上游仓库：cwuom/NeriPlayer，master 主分支。
-入口：.github/workflows/vivo_upstream.yml。
-构建和发布由目标仓库的 GitHub Actions 执行，配置步骤见下文。
+上游仓库：cwuom/NeriPlayer
+入口：.github/workflows/vivo_upstream.yml
 
-运行方式
-工作流每半小时检查一次，也可在 Actions 手动执行。
-从 PATCH_BASE 开始，逐个构建 master 的新主线提交，以及此基线时间之后发布的 Release
-（包括预发布）。不追踪其他分支，也不为合并进 master 的每个支线提交重复构建。
-每轮最多处理八项，最多同时构建两项；积压会在后续轮次继续处理。
-上游 commit 和 Release 分开记录，即使指向同一提交也会生成独立产物。
-GitHub 定时任务可能延迟；公网仓库连续 60 天无活动时，定时任务可能被禁用，需重新启用。
-这不保证捕获检查间隔内已经被上游强推删除的提交。
+发布流程
+每半小时检查上游新 Release，也可手动运行。以 Release 标签解析出的精确提交为输入，
+合并到派生仓库 master 并推送；随后检出合并提交，测试、构建、签名并发布。
+从上游 Release 421509148（NeriPlayer-224df247.10231345）开始跟随，不补发旧版 debug 包。
+不再逐个构建上游 commit；预发布仍标为 prerelease。每轮处理一个 Release，串行合并，
+积压在后续轮次继续处理。GitHub 定时任务可能延迟，不承诺发布后立即完成。
 
-保留适配与干净历史
-PATCH_BASE 是本次修改之前的原始上游提交：
-f146a1fc65b1427a9950b9db95b2d1f1da536421。
-vivo 功能和跟随构建按逻辑提交；本地同步上游使用明确的合并提交，保留已发布历史。
-CI 在临时 checkout 中，筛选基线之后不属于上游 master 的非合并适配提交，
-按拓扑顺序 cherry-pick 到待构建版本，再初始化子模块。
-普通上游同步合并不会把后来的上游改动带入旧版本构建。
-含冲突解决改动的合并会停止，需人工整理可重放的适配补丁后再运行，避免默默漏掉合并中的修复。
-不会向仓库提交轮询状态、自动合并或强推。原仓库的其他工作流保持不变。
-发生源码冲突或测试失败时，该构建停止，不丢弃适配、忽略测试或发布失败 APK。
-通过 Actions 失败通知处理冲突；修复适配提交后，未发布的任务会重试。
-更新 PATCH_BASE 必须同时整理相应提交范围，不能只修改一个 SHA。
+保留明确的 merge 历史和 fork 适配，不使用补丁重放、强推或静默解决源码冲突。
+合并冲突时不推送；测试、构建或签名失败时不发布，修复后重试同一上游 Release。
+构建固定使用本轮合并 SHA，不会在构建过程中切换到后来更新的 master。
+完成标记为非草稿 Release，以及非空 APK、对应源码 ZIP 两个附件。
+失败草稿在重试时补齐附件后发布；已经发布的版本不会因定时检查而反复覆盖。
 
-APK 与签名
-构建项目现有 debug variant，包名 moe.ouom.neriplayer.debug，避免覆盖原版应用。
-保留现有版本计算、Gradle Wrapper、AGP、SDK 和原生构建版本，不主动升级依赖。
-复用现有展示层单元测试；通过后构建 APK。CI 不包含 vivo 真机验收。
-独立的发布 runner 签名，不在执行上游构建的 runner 中暴露签名密钥。
-固定签名可持续覆盖同包测试版。默认沿用项目按小时生成的 versionCode，
-同一小时可能相同；同签名同版本号可替换安装，不保证应用内更新器会提示。
-Release 附带 APK 与实际应用改动后的源码 ZIP（含已初始化子模块），保留 GPL 与第三方许可证。
-GitHub 自动生成的 Source code 附件只对应派生仓库的提交，应使用额外的源码 ZIP 复现对应构建。
+优化版 APK
+使用 :app:assembleVivoRelease，包名 moe.ouom.neriplayer.vivo，显示名称 NeriPlayer vivo。
+该 variant 继承 release 的 R8 优化、代码及资源缩减，不可调试，模块使用 release 依赖。
+默认仅构建 arm64-v8a；debug 和上游原版构建入口不变。
+独立包与原版、现有 .debug 并存，首次安装需导入数据并重新配置目标设备的 vivo 场景权限。
+不自动修改系统准入名单。正常播放器、队列、收藏和通知语义继续使用现有实现。
+versionCode 使用自 2020-01-01 UTC 起的秒数；CI 将同一构建的值显式传入 Gradle，
+版本名称包含上游标签与合并提交。没有把可调试 APK 改名成 release。
+
+签名与源码
+独立、长期固定的 PKCS12 release 证书，不复用 debug 测试证书或上游作者证书。
+私钥和口令不提交到仓库。先验证 keystore 格式、别名，再确认包名且拒绝 debuggable APK，
+签名后执行 apksigner verify --print-certs。更换证书会影响已安装版本的覆盖升级。
+签名使用单独 runner；该 runner 不检出、编译或执行上游源码。
+构建 runner 不接触私钥；R8 mapping 和测试报告保存在 Actions 附件中。
+Release 附带实际合并源码 ZIP（含子模块），保留 GPL 与第三方许可证。
+GitHub 自动生成的 Source code 附件以 release 指向的合并提交为基础。
 
 仓库配置
-1. 将整理后的适配及工作流提交推送到目标仓库默认分支，并启用 GitHub Actions。
-2. 在该仓库 Actions Secrets 中配置：
-   VIVO_KEYSTORE_B64：固定测试 p12 的 Base64。
-   VIVO_STORE_PASSWORD：存储口令。
-   VIVO_KEY_PASSWORD：密钥口令。
-   VIVO_KEY_ALIAS：neri-vivo-test。
-   使用已批准的凭证工具传入，禁止把签名文件或口令提交到 Git。
-3. 派生仓库只启用需要的工作流。原上游 CI / 手动发布依赖自己的 Secrets 和运行资源，
-   不应误触原上游发布配置。不要改写其原始工作流来绕过要求。
-4. 在仓库 Watch → Custom 中订阅 Releases；个人 Settings → Notifications 中启用邮件。
-   同时开启 Actions 失败邮件，以便收到冲突、构建和签名失败通知。
-5. 手动运行一次，确认 APK 签名、Release 附件、对应源码及邮件实际送达。
-   commit 构建标为 prerelease，Release 构建为普通 release，全部不抢占 latest。
-   GitHub 邮件投递取决于账号订阅与邮件设置，本地无法验证。
+Actions Secrets：
+  VIVO_RELEASE_KEYSTORE_B64：固定 PKCS12 私钥库的 Base64。
+  VIVO_RELEASE_STORE_PASSWORD：私钥库口令。
+  VIVO_RELEASE_KEY_PASSWORD：密钥口令。
+  VIVO_RELEASE_KEY_ALIAS：neriplayer-vivo-release。
+使用受支持的凭证工具配置 Secrets，禁止写入源码或日志。
+私钥库与可独立恢复的口令应分别离线备份；GitHub Secrets 不能作为可下载的密钥备份。
+本机 password.dpapi 绑定 Windows 用户，单独复制它不等于跨电脑恢复口令。
 
-完成标记以目标仓库非草稿 Release 及两个非空附件为准。删除相应 Release 会使任务重新排队。
-适配代码改变后，已完成的上游版本不会自动重复发布；可删除指定构建 Release 后手动重跑。
-已失败的同名草稿会被下次重试补齐附件，然后发布。
+邮件通知
+用户已配置 GitHub Release 通知。完成签名与附件上传后，最后将 Release 从草稿发布，
+由 GitHub 按账号订阅和邮件设置投递通知；不在 CI 保存邮箱密码。
+失败不发布 Release，可通过 Actions 失败通知获知，不能把未完成构建写成发布成功。
 
-官方行为参考
+官方参考
+https://developer.android.com/studio/publish/app-signing
 https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows
 https://docs.github.com/en/subscriptions-and-notifications/get-started/configuring-notifications

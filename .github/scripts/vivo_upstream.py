@@ -1,7 +1,6 @@
-"""Discover upstream builds and replay only the fork's adaptations without pushing history."""
+"""Merge new upstream Releases into the fork, then build and publish its release variant."""
 
 import argparse
-from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -12,9 +11,9 @@ import zipfile
 
 
 UPSTREAM = "cwuom/NeriPlayer"
-# Last unmodified upstream commit; change only when intentionally refreshing the patch base.
-PATCH_BASE = "f146a1fc65b1427a9950b9db95b2d1f1da536421"
-MAX_BATCH = 8
+# First upstream Release enrolled in the optimized .vivo distribution.
+FIRST_RELEASE_ID = 421509148
+REQUIRED_ASSETS = {"NeriPlayer-vivo.apk", "NeriPlayer-vivo-source.zip"}
 
 
 def git(*args):
@@ -30,7 +29,7 @@ def releases(repository):
         request = urllib.request.Request(
             f"https://api.github.com/repos/{repository}/releases?per_page=100&page={page}",
             headers={"Authorization": f"Bearer {os.environ['GH_TOKEN']}",
-                     "Accept": "application/vnd.github+json", "User-Agent": "NeriPlayer-vivo-build"},
+                     "Accept": "application/vnd.github+json", "User-Agent": "NeriPlayer-vivo-release"},
         )
         with urllib.request.urlopen(request, timeout=60) as response:
             batch = json.load(response)
@@ -40,71 +39,52 @@ def releases(repository):
         page += 1
 
 
-def discover():
-    repository = os.environ["GITHUB_REPOSITORY"]
-    required_assets = {"NeriPlayer-vivo.apk", "NeriPlayer-vivo-source.zip"}
-    done = {r["tag_name"] for r in releases(repository) if not r["draft"] and
-            required_assets.issubset({a["name"] for a in r["assets"] if a["size"] > 0})}
-    git("fetch", "--no-tags", f"https://github.com/{UPSTREAM}.git",
-        "refs/heads/master:refs/remotes/vivo-upstream/master")
-    tip = "refs/remotes/vivo-upstream/master"
-    subprocess.run(["git", "merge-base", "--is-ancestor", PATCH_BASE, tip], check=True)
-    baseline_time = datetime.fromisoformat(git("show", "-s", "--format=%cI", PATCH_BASE))
-    pending = []
-    # A release is a separate build even if its commit already has a development APK.
-    upstream_releases = sorted(
-        (r for r in releases(UPSTREAM) if not r["draft"] and
-         datetime.fromisoformat(r["published_at"].replace("Z", "+00:00")) >= baseline_time),
-        key=lambda r: r["published_at"],
+def pending_release(own, upstream):
+    done = {r["tag_name"] for r in own if not r["draft"] and
+            REQUIRED_ASSETS.issubset({a["name"] for a in r["assets"] if a["size"] > 0})}
+    pending = sorted(
+        (r for r in upstream if not r["draft"] and r["id"] >= FIRST_RELEASE_ID and
+         f"vivo-release-{r['id']}" not in done),
+        key=lambda r: (r["published_at"], r["id"]),
     )
-    for release in upstream_releases:
-        tag = f"vivo-release-{release['id']}"
-        if tag in done:
-            continue
-        git("fetch", "--no-tags", f"https://github.com/{UPSTREAM}.git", f"refs/tags/{release['tag_name']}")
-        sha = git("rev-parse", "FETCH_HEAD^{commit}")
-        pending.append({"sha": sha, "tag": tag, "kind": "release", "label": release["tag_name"]})
-        if len(pending) >= MAX_BATCH:
-            break
-    if len(pending) < MAX_BATCH:
-        commits = git("rev-list", "--reverse", "--first-parent", f"{PATCH_BASE}..{tip}").splitlines()
-        for sha in commits:
-            tag = f"vivo-commit-{sha}"
-            if tag not in done:
-                pending.append({"sha": sha, "tag": tag, "kind": "commit", "label": sha[:12]})
-            if len(pending) >= MAX_BATCH:
-                break
-    # Include the current baseline on first activation, even before upstream moves.
-    if not pending and f"vivo-commit-{PATCH_BASE}" not in done:
-        pending.append({"sha": PATCH_BASE, "tag": f"vivo-commit-{PATCH_BASE}",
-                        "kind": "commit", "label": PATCH_BASE[:12]})
+    return pending[0] if pending else None
+
+
+def outputs(values):
+    if any("\n" in str(value) or "\r" in str(value) for value in values.values()):
+        raise ValueError("Multiline workflow output")
     with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-        output.write("matrix=" + json.dumps({"include": pending}, separators=(",", ":")) + "\n")
-        output.write(f"has_builds={'true' if pending else 'false'}\n")
-    print(f"Pending builds in this batch: {len(pending)}")
+        for key, value in values.items():
+            output.write(f"{key}={value}\n")
 
 
-def prepare(sha):
+def discover():
+    release = pending_release(releases(os.environ["GITHUB_REPOSITORY"]), releases(UPSTREAM))
+    if release is None:
+        outputs({"has_release": "false"})
+        return
+    ref = f"refs/tags/{release['tag_name']}"
+    git("check-ref-format", ref)
+    git("fetch", "--no-tags", f"https://github.com/{UPSTREAM}.git", ref)
+    sha = git("rev-parse", "FETCH_HEAD^{commit}")
+    validate_sha(sha)
+    outputs({"has_release": "true", "sha": sha, "tag": f"vivo-release-{release['id']}",
+             "label": release["tag_name"], "prerelease": str(release["prerelease"]).lower()})
+
+
+def validate_sha(sha):
     if not re.fullmatch(r"[0-9a-f]{40}", sha):
         raise ValueError("Expected an upstream commit SHA")
+
+
+def merge_release(sha):
+    validate_sha(sha)
     git("config", "user.name", "github-actions[bot]")
     git("config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com")
-    upstream_tip = "refs/remotes/vivo-upstream/master"
-    git("fetch", "--no-tags", f"https://github.com/{UPSTREAM}.git",
-        f"refs/heads/master:{upstream_tip}")
-    git("merge-base", "--is-ancestor", PATCH_BASE, upstream_tip)
     git("fetch", "--no-tags", f"https://github.com/{UPSTREAM}.git", sha)
-    # An upstream sync merge must not make later upstream changes part of an older build.
-    own_range = (f"{PATCH_BASE}..HEAD", "--not", upstream_tip)
-    for merge in git("rev-list", "--merges", *own_range).splitlines():
-        if git("show", "--remerge-diff", "--format=", "--no-ext-diff", merge):
-            raise ValueError("Cannot replay merge conflict resolutions; refresh the adaptation patch series before building")
-    patches = git("rev-list", "--reverse", "--topo-order", "--no-merges", *own_range).splitlines()
-    # Only the temporary runner checkout changes; published branch history remains intact.
-    git("switch", "--detach", sha)
-    if patches:
-        subprocess.run(["git", "cherry-pick", *patches], check=True)
-    subprocess.run(["git", "submodule", "update", "--init", "--recursive"], check=True)
+    # Preserve the fork's commits and explicit merge history. Conflicts stop before a push.
+    subprocess.run(["git", "merge", "--no-ff", "--no-edit", sha], check=True)
+    outputs({"merged_sha": git("rev-parse", "HEAD")})
 
 
 def archive(destination):
@@ -117,12 +97,12 @@ def archive(destination):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["discover", "prepare", "archive"])
+    parser.add_argument("command", choices=["discover", "merge", "archive"])
     parser.add_argument("value", nargs="?")
     args = parser.parse_args()
     if args.command == "discover":
         discover()
-    elif args.command == "prepare":
-        prepare(args.value or "")
+    elif args.command == "merge":
+        merge_release(args.value or "")
     else:
         archive(args.value or "vivo-source.zip")

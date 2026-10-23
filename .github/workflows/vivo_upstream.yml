@@ -1,4 +1,4 @@
-name: Vivo upstream builds
+name: Vivo upstream releases
 
 on:
   schedule:
@@ -17,14 +17,17 @@ jobs:
     if: github.repository == 'DongLanQwQ0/NeriPlayer'
     runs-on: ubuntu-latest
     outputs:
-      matrix: ${{ steps.pending.outputs.matrix }}
-      has_builds: ${{ steps.pending.outputs.has_builds }}
+      has_release: ${{ steps.pending.outputs.has_release }}
+      sha: ${{ steps.pending.outputs.sha }}
+      tag: ${{ steps.pending.outputs.tag }}
+      label: ${{ steps.pending.outputs.label }}
+      prerelease: ${{ steps.pending.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Discover new upstream commits and releases
+      - name: Discover the next unpublished upstream Release
         id: pending
         env:
           GH_TOKEN: ${{ github.token }}
@@ -32,24 +35,38 @@ jobs:
           python3 -B -m unittest discover -s .github/scripts -p 'test_vivo_upstream.py'
           python3 .github/scripts/vivo_upstream.py discover
 
-  build:
+  merge:
     needs: discover
-    if: needs.discover.outputs.has_builds == 'true'
+    if: needs.discover.outputs.has_release == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      max-parallel: 2
-      matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.merge.outputs.merged_sha }}
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: master
           fetch-depth: 0
-          persist-credentials: false
-      - name: Replay vivo changes on the upstream revision
+      - name: Merge the pinned upstream Release into the fork
+        id: merge
         env:
-          UPSTREAM_SHA: ${{ matrix.sha }}
-        run: python3 .github/scripts/vivo_upstream.py prepare "$UPSTREAM_SHA"
+          UPSTREAM_SHA: ${{ needs.discover.outputs.sha }}
+        run: |
+          python3 .github/scripts/vivo_upstream.py merge "$UPSTREAM_SHA"
+          git push origin HEAD:refs/heads/master
+
+  build:
+    needs: [discover, merge]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.merge.outputs.sha }}
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
       - name: Set up JDKs
         uses: actions/setup-java@v4
         with:
@@ -60,79 +77,101 @@ jobs:
           cache: gradle
       - name: Install pinned Android NDK
         uses: ./.github/actions/android-ndk
-      - name: Test presentation and build the isolated debug package
+      - name: Test playback presentation and startup
         run: |
           chmod +x gradlew
-          ./gradlew :playback:runtime:testDebugUnitTest --tests '*PlaybackServicePresentationOwnerTest' --tests '*PlaybackNotificationSeekTest' --tests '*VivoMusic*Test' --tests '*CarMediaSessionCallbackTest' --console=plain
-          ./gradlew :app:assembleDebug --console=plain
-      - name: Package APK and corresponding source
+          ./gradlew '-Dorg.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8' :playback:runtime:testDebugUnitTest --tests '*PlaybackServicePresentationOwnerTest' --tests '*PlaybackServiceMetadataPublicationTest' --tests '*PlaybackNotificationSeekTest' --tests '*VivoMusic*Test' --tests '*CarMediaSessionCallbackTest' --console=plain
+          ./gradlew '-Dorg.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8' :app:testDebugUnitTest --tests '*AppContainerBootstrapTest' --tests '*NeriAppStartupGlassGatePolicyTest' --console=plain
+      - name: Build the optimized, non-debuggable vivo release
+        env:
+          UPSTREAM_LABEL: ${{ needs.discover.outputs.label }}
+          MERGED_SHA: ${{ needs.merge.outputs.sha }}
         run: |
+          version_code="$(( $(date -u +%s) - 1577836800 ))"
+          ./gradlew '-Dorg.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8' :app:assembleVivoRelease -PallowUnsignedRelease=true \
+            "-PvivoVersionCode=$version_code" "-PvivoVersionName=$UPSTREAM_LABEL-vivo.${MERGED_SHA:0:8}" --console=plain
           mkdir -p vivo-dist
-          cp app/build/outputs/apk/debug/*.apk vivo-dist/NeriPlayer-vivo.apk
+          cp app/build/outputs/apk/vivoRelease/*.apk vivo-dist/NeriPlayer-vivo.apk
           python3 .github/scripts/vivo_upstream.py archive vivo-dist/NeriPlayer-vivo-source.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.tag }}
+          name: ${{ needs.discover.outputs.tag }}
           path: vivo-dist/*
           if-no-files-found: error
           retention-days: 7
+      - name: Preserve R8 mappings and test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vivo-release-verification
+          path: |
+            app/build/outputs/mapping/vivoRelease/mapping.txt
+            app/build/test-results/testDebugUnitTest/
+            modules/playback/runtime/build/test-results/testDebugUnitTest/
+          if-no-files-found: warn
 
   publish:
-    needs: [discover, build]
-    if: ${{ !cancelled() && needs.discover.outputs.has_builds == 'true' }}
+    needs: [discover, merge, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    strategy:
-      fail-fast: false
-      max-parallel: 2
-      matrix: ${{ fromJSON(needs.discover.outputs.matrix) }}
     steps:
-      # A fresh runner never executes the fetched upstream build with signing secrets present.
+      # No checkout: signing secrets never reach a runner executing upstream code.
       - uses: actions/download-artifact@v4
         with:
-          name: ${{ matrix.tag }}
+          name: ${{ needs.discover.outputs.tag }}
           path: vivo-dist
-      - name: Set up signing runtime
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
-      - name: Sign with the persistent local test identity
+      - name: Sign and verify the independent release identity
         env:
-          KEYSTORE_B64: ${{ secrets.VIVO_KEYSTORE_B64 }}
-          STORE_PASSWORD: ${{ secrets.VIVO_STORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.VIVO_KEY_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.VIVO_KEY_ALIAS }}
+          KEYSTORE_B64: ${{ secrets.VIVO_RELEASE_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.VIVO_RELEASE_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.VIVO_RELEASE_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.VIVO_RELEASE_KEY_ALIAS }}
+          EXPECTED_CERT_SHA256: '70ba48ad41fc46f30270a7fe86cd057915cc6a15b6a2bc509a1922a632618a67'
         run: |
           set -euo pipefail
           test -n "$KEYSTORE_B64" && test -n "$STORE_PASSWORD" && test -n "$KEY_PASSWORD" && test -n "$KEY_ALIAS"
-          key="$RUNNER_TEMP/vivo-test.p12"
+          key="$RUNNER_TEMP/vivo-release.p12"
           trap 'rm -f "$key"' EXIT
           printf '%s' "$KEYSTORE_B64" | base64 --decode > "$key"
           chmod 600 "$key"
+          keytool -list -storetype PKCS12 -keystore "$key" -storepass:env STORE_PASSWORD -alias "$KEY_ALIAS"
           signer="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
           test -n "$signer"
-          "$signer" sign --ks "$key" --ks-key-alias "$KEY_ALIAS" \
+          aapt="$(dirname "$signer")/aapt"
+          badging="$("$aapt" dump badging vivo-dist/NeriPlayer-vivo.apk)"
+          printf '%s\n' "$badging" | grep -q "package: name='moe.ouom.neriplayer.vivo'"
+          if printf '%s\n' "$badging" | grep -q 'application-debuggable'; then
+            echo 'Refusing to publish a debuggable APK' >&2
+            exit 1
+          fi
+          "$signer" sign --ks "$key" --ks-type PKCS12 --ks-key-alias "$KEY_ALIAS" \
             --ks-pass env:STORE_PASSWORD --key-pass env:KEY_PASSWORD vivo-dist/NeriPlayer-vivo.apk
-          "$signer" verify vivo-dist/NeriPlayer-vivo.apk
-      - name: Publish the completed build
+          "$signer" verify --print-certs vivo-dist/NeriPlayer-vivo.apk | tee "$RUNNER_TEMP/certificate.txt"
+          actual_cert="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/certificate.txt")"
+          test "$actual_cert" = "$EXPECTED_CERT_SHA256"
+      - name: Publish the release and trigger configured GitHub notifications
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          BUILD_TAG: ${{ matrix.tag }}
-          BUILD_KIND: ${{ matrix.kind }}
-          UPSTREAM_LABEL: ${{ matrix.label }}
-          UPSTREAM_SHA: ${{ matrix.sha }}
-          FORK_SHA: ${{ github.sha }}
+          BUILD_TAG: ${{ needs.discover.outputs.tag }}
+          UPSTREAM_LABEL: ${{ needs.discover.outputs.label }}
+          UPSTREAM_SHA: ${{ needs.discover.outputs.sha }}
+          FORK_SHA: ${{ needs.merge.outputs.sha }}
+          PRERELEASE: ${{ needs.discover.outputs.prerelease }}
         run: |
           set -euo pipefail
-          printf '非官方 vivo 适配构建\n\n上游：cwuom/NeriPlayer@%s\n上游版本：%s\n适配源码：DongLanQwQ0/NeriPlayer@%s\n\n包名 moe.ouom.neriplayer.debug，使用固定测试签名。对应源码包含子模块，见附件。\n原子岛仍需目标设备场景权限，本构建不自动开通厂商准入。\n' \
-            "$UPSTREAM_SHA" "$UPSTREAM_LABEL" "$FORK_SHA" > "$RUNNER_TEMP/release-notes.txt"
-          args=(--repo "$GH_REPO" --target "$FORK_SHA" --title "Vivo · $UPSTREAM_LABEL" --notes-file "$RUNNER_TEMP/release-notes.txt" --latest=false)
-          if [ "$BUILD_KIND" = commit ]; then args+=(--prerelease); fi
+          printf '非官方 vivo 适配 Release\n\n上游版本：%s\n上游提交：cwuom/NeriPlayer@%s\n合并源码：DongLanQwQ0/NeriPlayer@%s\n\n包名 moe.ouom.neriplayer.vivo，独立固定 release 签名，开启 R8 优化，与原版及 debug 版并存。首次安装需导入数据并配置目标设备场景权限。\n附件源码 ZIP 包含子模块，准确对应本 APK。\n' \
+            "$UPSTREAM_LABEL" "$UPSTREAM_SHA" "$FORK_SHA" > "$RUNNER_TEMP/release-notes.txt"
           if ! gh release view "$BUILD_TAG" --repo "$GH_REPO" > /dev/null 2>&1; then
-            gh release create "$BUILD_TAG" --draft "${args[@]}"
+            args=(--repo "$GH_REPO" --target "$FORK_SHA" --title "Vivo · $UPSTREAM_LABEL" --notes-file "$RUNNER_TEMP/release-notes.txt" --latest=false --draft)
+            if [ "$PRERELEASE" = true ]; then args+=(--prerelease); fi
+            gh release create "$BUILD_TAG" "${args[@]}"
           fi
           gh release upload "$BUILD_TAG" vivo-dist/NeriPlayer-vivo.apk vivo-dist/NeriPlayer-vivo-source.zip --repo "$GH_REPO" --clobber
           gh release edit "$BUILD_TAG" --repo "$GH_REPO" --draft=false
+          gh release view "$BUILD_TAG" --repo "$GH_REPO" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"
