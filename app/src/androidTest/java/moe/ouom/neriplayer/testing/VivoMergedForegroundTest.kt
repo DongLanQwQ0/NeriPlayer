@@ -6,7 +6,11 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioTrack
 import android.media.session.MediaSession
+import android.media.session.PlaybackState
 import android.os.Build
 import android.os.SystemClock
 import androidx.annotation.RequiresApi
@@ -29,7 +33,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class VivoMergedForegroundTest {
     @Test
-    fun superXRetaggingKeepsTheForegroundIdentitySeparate() {
+    fun superXForegroundRoutesKeepServiceAliveAndCleanUp() {
         android.util.Log.i("VivoFgProbe", "enter")
         assumeTrue(InstrumentationRegistry.getArguments().getString("runVivoMergedForeground") == "true")
         assumeTrue(Build.VERSION.SDK_INT >= 31)
@@ -50,7 +54,10 @@ class VivoMergedForegroundTest {
         manager.createNotificationChannel(NotificationChannel(channel, "Vivo foreground test", NotificationManager.IMPORTANCE_LOW))
         // The ADB test driver brings MainActivity to the foreground after instrumentation starts.
         // Require normal visible-app FGS admission without changing player or activity ownership.
-        await("Bring the test application to the foreground") {
+        instrumentation.sendStatus(0, android.os.Bundle().apply {
+            putString("stream", "\nFGS_AWAIT_FOREGROUND route=$route\n")
+        })
+        await("Bring the test application to the foreground", timeoutMillis = 30_000L) {
             var resumed = false
             instrumentation.runOnMainSync {
                 resumed = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
@@ -61,7 +68,23 @@ class VivoMergedForegroundTest {
         android.util.Log.i("VivoFgProbe", "activity resumed")
         val session = MediaSession(context, "vivo-foreground-probe")
         val service = Intent(context, VivoForegroundProbeService::class.java)
+        var audio: AudioTrack? = null
         try {
+            // A mediaPlayback service with no audio is frozen by this OEM after backgrounding.
+            // Use an isolated silent stream, without requesting focus or touching the real player.
+            val sampleRate = 8_000
+            val silence = ByteArray(sampleRate * 2)
+            audio = AudioTrack.Builder()
+                .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
+                .setAudioFormat(AudioFormat.Builder().setSampleRate(sampleRate)
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
+                .setTransferMode(AudioTrack.MODE_STATIC).setBufferSizeInBytes(silence.size).build()
+            assertEquals(silence.size, audio.write(silence, 0, silence.size))
+            assertEquals(AudioTrack.SUCCESS, audio.setLoopPoints(0, sampleRate, -1))
+            audio.play()
+            session.setPlaybackState(PlaybackState.Builder().setState(PlaybackState.STATE_PLAYING, 0, 1f).build())
+            session.isActive = true
             val notification = Notification.Builder.recoverBuilder(context, fixtureNotification(context))
                 .setChannelId(channel)
                 .setStyle(Notification.MediaStyle().setMediaSession(session.sessionToken))
@@ -95,8 +118,36 @@ class VivoMergedForegroundTest {
                 putString("stream", "\nFGS route=$route identities=${first.map { "tag=${it.tag}, flags=${it.notification.flags}" }}\n")
             })
             assertTrue("Unexpected notification identities", first.size in 1..2)
-            assertTrue("Bootstrap lost its foreground flag",
-                first.any { it.notification.flags and Notification.FLAG_FOREGROUND_SERVICE != 0 })
+            if (route == "foreground-direct") {
+                assertEquals("Direct route created a second notice", 1, first.size)
+            } else {
+                assertTrue("Bootstrap lost its foreground flag",
+                    first.any { it.notification.flags and Notification.FLAG_FOREGROUND_SERVICE != 0 })
+            }
+
+            instrumentation.runOnMainSync {
+                ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
+                    .filter { it.packageName == context.packageName }
+                    .forEach { assertTrue("Could not background the fixture", it.moveTaskToBack(true)) }
+            }
+            await("Fixture activity remained resumed") {
+                var resumed = false
+                instrumentation.runOnMainSync {
+                    resumed = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED)
+                        .any { it.packageName == context.packageName }
+                }
+                !resumed
+            }
+            instrumentation.sendStatus(0, android.os.Bundle().apply {
+                putString("stream", "\nFGS_BACKGROUND_READY route=$route\n")
+            })
+            repeat(20) {
+                Thread.sleep(500)
+                assertForeground(context)
+                assertEquals("Fixture audio stopped", AudioTrack.PLAYSTATE_PLAYING, audio.playState)
+            }
+            assertEquals("Backgrounding changed the identities", first.size,
+                manager.activeNotifications.count { it.id == id })
 
             val update = Notification.Builder.recoverBuilder(context, notification).setContentTitle("Vivo merged update").build()
             update.extras.putInt("notification.superx.operation", 1)
@@ -120,10 +171,14 @@ class VivoMergedForegroundTest {
             // The OEM card has independent ownership; explicitly remove its actual identity.
             manager.activeNotifications.filter { it.id == id }.forEach { manager.cancel(it.tag, it.id) }
             await("Explicit cancellation left a retagged notification") { manager.activeNotifications.none { it.id == id } }
+            instrumentation.sendStatus(0, android.os.Bundle().apply {
+                putString("stream", "\nFGS_CLEANED route=$route backgroundMs=10000\n")
+            })
         } finally {
             context.stopService(service)
             manager.activeNotifications.filter { it.id == id }.forEach { manager.cancel(it.tag, it.id) }
             manager.cancel(id)
+            audio?.release()
             session.release()
         }
     }
@@ -148,8 +203,8 @@ class VivoMergedForegroundTest {
         return type.declaredMethods.single { it.name.startsWith("notification$") }.invoke(bridge, inputs, 0) as Notification
     }
 
-    private fun await(message: String, condition: () -> Boolean) {
-        val deadline = SystemClock.elapsedRealtime() + 5_000L
+    private fun await(message: String, timeoutMillis: Long = 5_000L, condition: () -> Boolean) {
+        val deadline = SystemClock.elapsedRealtime() + timeoutMillis
         while (!condition() && SystemClock.elapsedRealtime() < deadline) Thread.sleep(50)
         assertTrue(message, condition())
     }

@@ -31,6 +31,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlin.math.roundToInt
 
 /** Explicit firmware probes; owns only its fixture notification and never starts playback. */
 @ManualInstrumentedTest
@@ -106,10 +107,14 @@ class VivoRemoteDrawingDeviceTest {
     }
 
     @Suppress("RestrictedApi")
-    private fun animatedProgress(clickId: Int? = null): RemoteViews {
-        val writer = RemoteComposeWriter(360, 160, "Vivo animation probe", 6, 0, RcPlatformServices.None)
+    private fun animatedProgress(clickId: Int? = null, density: Float = 1f): RemoteViews {
+        // Document dimensions are physical pixels; the host measures its intrinsic height.
+        val writer = RemoteComposeWriter((360 * density).roundToInt(), (160 * density).roundToInt(),
+            "Vivo animation probe", 6, 0, RcPlatformServices.None)
         writer.setRootContentBehavior(RootContentBehavior.NONE, RootContentBehavior.ALIGNMENT_CENTER,
             RootContentBehavior.SIZING_SCALE, RootContentBehavior.SCALE_FILL_WIDTH)
+        writer.save()
+        writer.scale(density, density)
         writer.rcPaint.setColor(0xff101820.toInt()).commit()
         writer.drawRoundRect(0f, 0f, 360f, 160f, 16f, 16f)
         writer.rcPaint.setColor(0xffffffff.toInt()).setTextSize(18f).commit()
@@ -120,6 +125,7 @@ class VivoRemoteDrawingDeviceTest {
         writer.rcPaint.setColor(0xff00d0cf.toInt()).commit()
         writer.drawRoundRect(24f, 98f, right, 106f, 4f, 4f)
         if (clickId != null) writer.addClickArea(clickId, "Probe progress", 24f, 78f, 336f, 126f, null)
+        writer.restore()
         return RemoteViews(RemoteViews.DrawInstructions.Builder(listOf(writer.encodeToByteArray())).build())
     }
 
@@ -134,7 +140,7 @@ class VivoRemoteDrawingDeviceTest {
         assumeTrue(manager.areNotificationsEnabled() && manager.activeNotifications.none { it.id == id })
         assumeTrue(NotificationManager::class.java.getDeclaredMethod("getSceneStatus", String::class.java,
             String::class.java).invoke(manager, context.packageName, "NERIPLAYER_MUSIC") == true)
-        val remote = animatedProgress()
+        val remote = animatedProgress(density = context.resources.displayMetrics.density)
         instrumentation.runOnMainSync { remote.apply(context, null) }
         val channel = "vivo_remote_drawing_probe"
         manager.createNotificationChannel(NotificationChannel(channel, "Vivo drawing test", NotificationManager.IMPORTANCE_LOW))
