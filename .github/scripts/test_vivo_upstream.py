@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -117,6 +118,34 @@ class UpstreamReleaseTests(unittest.TestCase):
             self.assertEqual("adaptation\n", Path(directory, "vivo.txt").read_text(encoding="utf-8"))
             self.assertEqual("release\n", Path(directory, "upstream.txt").read_text(encoding="utf-8"))
             self.assertEqual([fork, upstream], local_git("show", "-s", "--format=%P", "HEAD").split())
+
+
+class SigningPinTests(unittest.TestCase):
+    def test_workflow_checks_all_reported_certificate_identities(self):
+        workflow = Path(__file__).resolve().parents[1] / "workflows" / "vivo_upstream.yml"
+        lines = workflow.read_text(encoding="utf-8").splitlines()
+        extraction = next(line.strip() for line in lines if line.strip().startswith("actual_cert="))
+        comparison = next(line.strip() for line in lines if line.strip().startswith('test "$actual_cert"'))
+        if os.name == "nt":
+            bash = Path(shutil.which("git")).resolve().parents[1] / "bin" / "bash.exe"
+        else:
+            bash = shutil.which("bash")
+        expected = "a" * 64
+        old = f"Signer #1 certificate SHA-256 digest: {expected}\n"
+        current = f"V3.0 Signer: certificate SHA-256 digest: {expected}\n"
+        foreign = f"V3.0 Signer: certificate SHA-256 digest: {'b' * 64}\n"
+        for report, accepted in ((old, True), (current, True), (old + current, True),
+                                 (old + foreign, False), ("No certificate\n", False)):
+            with self.subTest(report=report), tempfile.TemporaryDirectory() as directory:
+                Path(directory, "certificate.txt").write_text(report, encoding="utf-8")
+                environment = dict(os.environ, RUNNER_TEMP=Path(directory).as_posix(),
+                                   EXPECTED_CERT_SHA256=expected)
+                result = subprocess.run(
+                    [str(bash), "-e", "-o", "pipefail", "-c",
+                     "PATH=/usr/bin:/bin:$PATH\n" + extraction + "\n" + comparison],
+                    env=environment, capture_output=True, text=True,
+                )
+                self.assertEqual(accepted, result.returncode == 0, result.stderr)
 
 
 if __name__ == "__main__":
