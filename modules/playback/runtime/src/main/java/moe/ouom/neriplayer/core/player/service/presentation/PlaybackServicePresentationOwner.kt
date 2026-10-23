@@ -13,7 +13,6 @@ import moe.ouom.neriplayer.core.player.service.notification.favoriteActionIcon
 import moe.ouom.neriplayer.core.player.service.notification.favoriteActionTitle
 import moe.ouom.neriplayer.core.player.service.notification.floatingLyricsActionIcon
 import moe.ouom.neriplayer.core.player.service.notification.floatingLyricsActionTitle
-import moe.ouom.neriplayer.core.player.service.notification.hasCurrentSongFavoriteStateChanged
 import moe.ouom.neriplayer.core.player.service.notification.resolveFloatingLyricsExternalTargetEnabled
 import moe.ouom.neriplayer.core.player.service.notification.serviceNotificationSnapshot
 import moe.ouom.neriplayer.core.player.service.notification.serviceNotificationText
@@ -30,6 +29,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.data.local.playlist.system.FavoritesPlaylist
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.stableKey
 import moe.ouom.neriplayer.core.player.presentation.widget.PlaybackWidgetState
@@ -74,6 +74,7 @@ internal data class PlaybackMetadataSnapshot(
     val artworkUri: String? = null,
     val favorite: Boolean = false,
     val canToggleFavorite: Boolean = false,
+    val colorOsLyricInfo: String? = null,
 )
 
 internal fun resolveServicePlaybackState(snapshot: PlaybackServicePlaybackSnapshot): Int = when {
@@ -196,11 +197,8 @@ internal class PlaybackServicePresentationOwner(
         val previous = favoriteSongKeys
         val updated = source.favoriteSongKeys()
         favoriteSongKeys = updated
-        return hasCurrentSongFavoriteStateChanged(
-            currentSongKey = source.playback().song?.stableKey(),
-            previousFavoriteSongKeys = previous,
-            updatedFavoriteSongKeys = updated,
-        )
+        val currentSong = source.playback().song
+        return isFavoriteSong(currentSong, previous) != isFavoriteSong(currentSong, updated)
     }
 
     fun canToggleFavorite(song: SongItem?): Boolean = shouldAllowExternalFavoriteToggle(
@@ -338,11 +336,13 @@ internal class PlaybackServicePresentationOwner(
             forceSendLyrics = metadataInputs.forceSendLyrics,
             mode = bluetoothMode,
             normalAlbum = metadataInputs.album,
+            colorOsLyricsEnabled = metadataInputs.colorOsLyricsEnabled,
         )
         val snapshot = serviceMetadataSnapshot(
             song, text, artworkSnapshot, playback.queue.size, playback.queueIndex,
             carArtwork.observe(song, artworkSnapshot),
             serviceMetadataMediaId(song, playback.queue, playback.queueIndex),
+            metadataInputs.colorOsLyricInfo.takeIf { metadataInputs.colorOsLyricsEnabled },
         ).copy(
             durationMs = playback.playerDurationMs.takeIf { playback.playerSongPresent && it > 0L }
                 ?: (song?.durationMs ?: 0L).coerceAtLeast(0L),
@@ -401,15 +401,21 @@ internal class PlaybackServicePresentationOwner(
         return serviceNotificationText(song, timer.state, timer.remaining, port::localizedString)
     }
 
-    private fun isFavoriteSong(song: SongItem?): Boolean =
-        song != null && song.stableKey() in favoriteSongKeys
+    private fun isFavoriteSong(song: SongItem?, keys: Set<String> = favoriteSongKeys): Boolean {
+        if (song == null) return false
+        if (song.stableKey() in keys) return true
+        val projected = FavoritesPlaylist.toSyncableSongOrNull(song) ?: return false
+        return projected.stableKey() in keys
+    }
 
     private fun requiresInteractiveFavoriteConfirmation(song: SongItem?): Boolean =
         shouldUseInteractiveFavoriteIntent(
             localPlaylistsReady = source.localPlaylistsReady(),
             hasCurrentSong = song != null,
             isFavorite = isFavoriteSong(song),
-            isLocalSong = song?.let(source::isLocalSong) == true,
+            isLocalSong = song?.let {
+                source.isLocalSong(it) && FavoritesPlaylist.toSyncableSongOrNull(it) == null
+            } == true,
         )
 
     private fun widgetState(
