@@ -43,6 +43,6 @@ am force-stop 仅作用于被测包，随后 am start -W；不清理任何应用
 发布前检查
 播放元数据、presentation、vivo、seek、车载相关定向 JVM 测试通过。
 账号引导、Cookie 观察器锁顺序与首帧挂载策略共 15 项启动检查通过。
-Release 跟随脚本 11 项检查及 actionlint 通过；包名、不可调试属性、版本号与固定证书核对。
+Release 跟随与签名报告脚本 12 项检查及 actionlint 通过；包名、不可调试属性、版本号与固定证书核对。
 新包的 vivo 场景权限需独立配置。此次性能验收不代表此前音乐岛通知去重、连续绘制原型
 已接入生产代码；这些实现与系统宿主验收仍按 vivo-music-integration.txt 继续。

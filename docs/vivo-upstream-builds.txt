@@ -5,6 +5,12 @@
 上游仓库：cwuom/NeriPlayer
 入口：.github/workflows/vivo_upstream.yml
 
+首个已验证发布（2026-10-23）
+https://github.com/DongLanQwQ0/NeriPlayer/releases/tag/vivo-release-421509148
+工作流 39951932512 已完成识别、合并、测试、构建、签名和发布，源码提交 436e31a1。
+实际下载核对了独立包名、不可调试属性、固定证书及四个子模块完整源码。
+APK versionCode 214921290；原版、debug 与独立正式版继续并存。
+
 发布流程
 每半小时检查上游新 Release，也可手动运行。以 Release 标签解析出的精确提交为输入，
 合并到派生仓库 master 并推送；随后检出合并提交，测试、构建、签名并发布。
