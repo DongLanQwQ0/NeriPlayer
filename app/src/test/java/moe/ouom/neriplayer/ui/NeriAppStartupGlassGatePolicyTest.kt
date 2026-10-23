@@ -24,7 +24,7 @@ class NeriAppStartupGlassGatePolicyTest {
         var directory = File(System.getProperty("user.dir") ?: ".")
         repeat(6) {
             val candidate = File(directory, path)
-            if (candidate.isFile) return candidate.readText()
+            if (candidate.isFile) return candidate.readText().replace("\r\n", "\n")
             directory = directory.parentFile ?: return@repeat
         }
         error("project source file not found: $path")

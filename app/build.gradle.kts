@@ -7,6 +7,7 @@ import org.gradle.api.tasks.testing.Test
 import org.gradle.testing.jacoco.tasks.JacocoReport
 import org.gradle.testing.jacoco.plugins.JacocoTaskExtension
 import java.util.UUID
+import java.time.Instant
 
 plugins {
     id("build-logic.android.application")
@@ -129,6 +130,19 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+
+        create("vivoRelease") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".vivo"
+            isDebuggable = false
+            isJniDebuggable = false
+            // The fork is signed separately, never with the upstream or debug identity.
+            signingConfig = null
+            matchingFallbacks += "release"
+            val inviteScheme = "neriplayer-vivo"
+            manifestPlaceholders["listenTogetherInviteScheme"] = inviteScheme
+            buildConfigField("String", "LISTEN_TOGETHER_INVITE_SCHEME", "\"$inviteScheme\"")
         }
     }
     buildFeatures {
@@ -391,6 +405,21 @@ tasks.named("check") {
 }
 
 androidComponents {
+    onVariants(selector().withBuildType("vivoRelease")) { variant ->
+        // Seconds since 2020 keep independently built updates ordered, within Android's Int limit.
+        val epoch2020 = Instant.parse("2020-01-01T00:00:00Z").epochSecond
+        val code = providers.gradleProperty("vivoVersionCode").map(String::toInt)
+            .orElse((Instant.now().epochSecond - epoch2020).toInt())
+        val name = providers.gradleProperty("vivoVersionName")
+            .orElse(provider { "${Common.getBuildVersionName(project)}-vivo" })
+        variant.outputs.forEach { output ->
+            output.versionCode.set(code.map {
+                require(it in 1..2_100_000_000) { "vivoVersionCode must fit Android's version range" }
+                it
+            })
+            output.versionName.set(name)
+        }
+    }
     onVariants(selector().all()) { variant ->
         if (variant.buildType == "debug") return@onVariants
 

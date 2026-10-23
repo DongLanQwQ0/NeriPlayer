@@ -551,10 +551,14 @@ object AppContainer {
         warmBiliVideoSkipRepository()
         warmCoverUrlMapper()
         primeProxySetting()
-        startCookieObserver()
-        startYouTubeAuthObserver()
-        startSettingsObserver()
-        warmYouTubePlaybackOnAppStart()
+        // Creating auth repositories opens encrypted storage and the platform keystore.
+        // launchIn only moves collection; construct those repositories off the startup main thread too.
+        scope.launch {
+            startCookieObserver()
+            startYouTubeAuthObserver()
+            startSettingsObserver()
+            warmYouTubePlaybackOnAppStart()
+        }
     }
 
     private fun warmLocalPlaylistRepository() {
