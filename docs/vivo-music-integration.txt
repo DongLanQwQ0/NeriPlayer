@@ -36,7 +36,10 @@ VivoMusicIslandBridge 使用独立场景 NERIPLAYER_MUSIC、独立通知频道�
 仅在 vivo 设备、通知和频道可用、且 getSceneStatus 明确返回 true 时发布。
 关闭场景、没有曲目或释放播放会话时，按实际活动通知的 tag / ID 撤下。
 展开卡片按原生音乐样式组织封面、歌名、歌词（无歌词时显示歌手）、进度、
-应用入口与上一曲 / 播放暂停 / 下一曲 / 收藏。封面取色生成暗色渐变，位图按封面缓存。
+应用入口与上一曲 / 播放暂停 / 下一曲 / 收藏。背景使用当前专辑封面居中裁切后的模糊图，
+保留封面的实际图像结构，上覆暗色遮罩保证文字和控件可读；不再只取平均色生成渐变。
+封面变化时，先缩至 64×36 再执行三轮可分离盒式模糊，最终缓存为 320×180 背景位图。
+进度和按钮状态更新复用缓存，不重复模糊；无封面时清除上一张专辑，使用中性暗底。
 以用户提供的网易云原生卡片为尺寸参考，在上述真机上校准边距和按钮位置。
 上一曲、播放 / 暂停、下一曲使用圆角轮廓。爱心按网易云参考图缩小，状态图四周内缩 5dp，保留 44dp 点击区域及原有中心位置。
 控制行向标题内容留白扩展时，中间容器不裁切，外层系统卡片保留边界。
@@ -136,6 +139,7 @@ VIVO_SUPERX_TAG / ID1313887817 / neriplayer_vivo_music_island，手机顶部出�
 本机调用源与前后配置记录保存在 F:\Android\NeriPlayerChecks\scene-tool。
 
 回归测试
+VivoMusicCardArtworkTest：封面空间结构、实际模糊、明亮封面遮罩、位图尺寸、缓存复用及无封面清理。
 CarMediaBrowserIntegrationTest#vivoDiscoveryReusesTheTrustedBrowserAndPlaybackSession
 CarMediaBrowserIntegrationTest#frameworkBrowserReusesPlaybackSessionWithoutPlayingOrStartingForeground
 VivoMusicIslandDeviceTest#cancellationUsesTheActualNotificationIdentity
