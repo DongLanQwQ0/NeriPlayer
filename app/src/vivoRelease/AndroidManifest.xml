@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- OriginOS notification badges use ApplicationInfo.icon instead of smallIcon.
+         Keep that icon flat so foreground extraction cannot replace its backdrop with black. -->
+    <application
+        android:icon="@drawable/vivo_brand_system_icon"
+        android:roundIcon="@drawable/vivo_brand_system_icon"
+        tools:replace="android:icon,android:roundIcon">
+        <!-- Launcher branding remains adaptive, with the approved pale-orange backdrop. -->
+        <activity
+            android:name="moe.ouom.neriplayer.activity.MainActivity"
+            android:icon="@mipmap/ic_launcher" />
+    </application>
+</manifest>

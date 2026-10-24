@@ -18,6 +18,9 @@ app/src/vivoRelease/res/drawable-nodpi/vivo_brand_art.png。
 通知小图标单独使用透明背景与透明三角开口的丝带轮廓，不套桌面浅橙底层。
 vivoRelease 的 drawable-nodpi/ic_notification_small.xml 复用 vivo_brand_monochrome。
 vivo 通知发送透明 ARGB 位图 Icon；原子岛卡片内部的应用图标仍保持原有浅色圆底。
+OriginOS 在通知封面角标和状态栏仍可能改取 ApplicationInfo.icon；单独更换 smallIcon
+已在真机确认不能改变该取图路径。正式变体因此分开声明：应用系统图标为白底平面丝带，
+MainActivity 的启动图标显式保留原有浅橙自适应图标，桌面图标不随通知角标变白。
 
 关于区域保留 NeriPlayer / GPLv3 原文，追加“适配版作者：DongLan”。
 仅 vivoRelease 资源覆盖生效；独立包名 moe.ouom.neriplayer.vivo 与固定签名保持不变，

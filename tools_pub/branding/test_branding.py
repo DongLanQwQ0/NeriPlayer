@@ -20,6 +20,19 @@ class BrandingTest(unittest.TestCase):
         self.assertEqual("@drawable/vivo_brand_monochrome", icon.get(namespace + "drawable"))
         self.assertEqual([], list(icon))
 
+    def test_system_badge_has_a_white_backplate_while_launcher_stays_pale_orange(self):
+        namespace = "{http://schemas.android.com/apk/res/android}"
+        manifest = ET.parse(ROOT / "app/src/vivoRelease/AndroidManifest.xml").getroot()
+        application = manifest.find("application")
+        self.assertEqual("@drawable/vivo_brand_system_icon", application.get(namespace + "icon"))
+        self.assertEqual("@drawable/vivo_brand_system_icon", application.get(namespace + "roundIcon"))
+        activity = application.find("activity")
+        self.assertEqual("moe.ouom.neriplayer.activity.MainActivity", activity.get(namespace + "name"))
+        self.assertEqual("@mipmap/ic_launcher", activity.get(namespace + "icon"))
+        badge = ET.parse(RESOURCES / "drawable/vivo_brand_system_icon.xml").getroot()
+        self.assertEqual("#FFFFFF", badge.find("item/shape/solid").get(namespace + "color"))
+        self.assertEqual("@drawable/vivo_brand_foreground", badge.findall("item")[1].get(namespace + "drawable"))
+
     def test_source_and_android_export_keep_transparent_background_and_opening(self):
         for path in (SOURCE, OUTPUT):
             with self.subTest(path=path), Image.open(path) as artwork:
