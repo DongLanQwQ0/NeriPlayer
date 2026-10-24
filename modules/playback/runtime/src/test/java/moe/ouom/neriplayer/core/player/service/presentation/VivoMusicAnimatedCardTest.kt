@@ -8,6 +8,9 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Rect
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Icon
+import android.os.Build
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
@@ -25,6 +28,7 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.shadows.ShadowSystemClock
+import org.robolectric.shadows.ShadowBuild
 import java.time.Duration
 import moe.ouom.neriplayer.data.identity.stableKey
 import org.robolectric.annotation.Config
@@ -45,13 +49,29 @@ class VivoMusicAnimatedCardTest {
     private val open get() = PendingIntent.getBroadcast(context, 1, Intent("test.OPEN").setPackage(context.packageName),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
 
+    @Test fun `vivo notification sends a transparent bitmap glyph instead of an adaptive icon resource`() {
+        val manufacturer = Build.MANUFACTURER
+        try {
+            ShadowBuild.setManufacturer("vivo")
+            val icon = createPlaybackNotificationIcon(context)
+            assertEquals(Icon.TYPE_BITMAP, icon.type)
+            val bitmap = (icon.loadDrawable(context) as BitmapDrawable).bitmap
+            assertEquals(0, android.graphics.Color.alpha(bitmap.getPixel(0, 0)))
+            assertTrue((0 until bitmap.width).any { x -> (0 until bitmap.height).any { y ->
+                android.graphics.Color.alpha(bitmap.getPixel(x, y)) > 0
+            } })
+            ShadowBuild.setManufacturer("other")
+            assertEquals(Icon.TYPE_RESOURCE, createPlaybackNotificationIcon(context).type)
+        } finally { ShadowBuild.setManufacturer(manufacturer) }
+    }
+
     @Test fun `rendering both icon states must never send playback or favorite commands`() {
         val application = shadowOf(context as Application)
         val bridge = VivoMusicIslandBridge(context)
         val card = bridge.javaClass.getDeclaredMethod("card", PlaybackServiceNotificationRenderInputs::class.java,
-            PendingIntent::class.java, Boolean::class.javaPrimitiveType).apply { isAccessible = true }
+            PendingIntent::class.java, Boolean::class.javaPrimitiveType, VivoMusicBackdropTransition.Frame::class.java).apply { isAccessible = true }
         for (checked in listOf(false, true)) for (cameraSafe in listOf(false, true)) {
-            card.invoke(bridge, inputs.copy(playbackControlPlaying = checked, favorite = checked), open, cameraSafe)
+            card.invoke(bridge, inputs.copy(playbackControlPlaying = checked, favorite = checked), open, cameraSafe, null)
             val command = application.nextStartedService
             assertNull("Rendering sent a real player command: ${command?.action}", command)
         }
@@ -91,7 +111,7 @@ class VivoMusicAnimatedCardTest {
         val renderer = VivoMusicAnimatedCard(context)
         fun document(color: Int): RemoteViews {
             val background = Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888).apply { eraseColor(color) }
-            return renderer.render(xml, inputs, background, false,
+            return renderer.render(xml, inputs, renderer.prepareBackground(background), false,
                 VivoMusicProgressMotion.Frame(0.1f, 0.1f, 0L, false), emptyMap(), emptyList())
         }
         val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
@@ -107,12 +127,21 @@ class VivoMusicAnimatedCardTest {
             return bitmap.getPixel(5, 5).also { bitmap.recycle() }
         }
         assertEquals(android.graphics.Color.RED, pixel())
-        document(android.graphics.Color.BLUE).reapply(activity, view)
+        val delivered = document(android.graphics.Color.BLUE)
+        // Notification transport/host inflation can take longer than the fade itself. The
+        // visible host keeps drawing the old document while the replacement is in transit.
+        Thread.sleep(450)
+        ShadowSystemClock.advanceBy(Duration.ofMillis(450))
+        assertEquals(android.graphics.Color.RED, pixel())
+        delivered.reapply(activity, view)
         val first = pixel()
         Thread.sleep(120)
+        ShadowSystemClock.advanceBy(Duration.ofMillis(120))
         val middle = pixel()
         Thread.sleep(300)
+        ShadowSystemClock.advanceBy(Duration.ofMillis(300))
         val after = pixel()
+        println("background host frames: ${Integer.toHexString(first)}, ${Integer.toHexString(middle)}, ${Integer.toHexString(after)}")
         assertTrue("Background switched on its first frame", android.graphics.Color.red(first) > android.graphics.Color.blue(first))
         assertTrue("Background had no blended intermediate frame", android.graphics.Color.red(middle) > 15 && android.graphics.Color.blue(middle) > 15)
         assertEquals(android.graphics.Color.BLUE, after)
@@ -128,8 +157,8 @@ class VivoMusicAnimatedCardTest {
         motion.update("song", 60_000L, 6_000L, false, SystemClock.elapsedRealtime())
         fun card(data: PlaybackServiceNotificationRenderInputs): RemoteViews = bridge.javaClass
             .getDeclaredMethod("card", PlaybackServiceNotificationRenderInputs::class.java,
-                PendingIntent::class.java, Boolean::class.javaPrimitiveType).apply { isAccessible = true }
-            .invoke(bridge, data, open, false) as RemoteViews
+                PendingIntent::class.java, Boolean::class.javaPrimitiveType, VivoMusicBackdropTransition.Frame::class.java).apply { isAccessible = true }
+            .invoke(bridge, data, open, false, null) as RemoteViews
         val xml = bridge.javaClass.getDeclaredMethod("classicCard", PlaybackServiceNotificationRenderInputs::class.java,
             PendingIntent::class.java, Boolean::class.javaPrimitiveType).apply { isAccessible = true }
             .invoke(bridge, inputs, open, false) as RemoteViews

@@ -15,6 +15,10 @@ app/src/vivoRelease/res/drawable-nodpi/vivo_brand_art.png。
 单色图标同步缩放。额外留白用于容纳圆形、圆角和其他系统遮罩的裁剪。
 系统主题附加的外框由用户主题控制。
 
+通知小图标单独使用透明背景与透明三角开口的丝带轮廓，不套桌面浅橙底层。
+vivoRelease 的 drawable-nodpi/ic_notification_small.xml 复用 vivo_brand_monochrome。
+vivo 通知发送透明 ARGB 位图 Icon；原子岛卡片内部的应用图标仍保持原有浅色圆底。
+
 关于区域保留 NeriPlayer / GPLv3 原文，追加“适配版作者：DongLan”。
 仅 vivoRelease 资源覆盖生效；独立包名 moe.ouom.neriplayer.vivo 与固定签名保持不变，
 以便覆盖升级并保留数据。原版、debug、上游作者版权、许可证和 GitHub 入口不变。

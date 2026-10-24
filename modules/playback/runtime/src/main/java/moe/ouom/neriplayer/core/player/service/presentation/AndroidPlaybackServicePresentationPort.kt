@@ -33,6 +33,7 @@ import androidx.annotation.DrawableRes
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.IntentCompat
+import androidx.core.graphics.drawable.toBitmap
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
 import moe.ouom.neriplayer.common.logging.NPLogger
@@ -59,6 +60,14 @@ internal data class PlaybackServiceNotificationRenderInputs(
     val lyricLine: String? = null,
     val durationMs: Long = song?.durationMs ?: 0L,
 )
+
+internal fun createPlaybackNotificationIcon(context: Context): Icon =
+    if (Build.MANUFACTURER.equals("vivo", ignoreCase = true)) {
+        // Send the transparent notification glyph itself, not a launcher resource for the
+        // host to reinterpret as an adaptive application icon with its own background.
+        Icon.createWithBitmap(checkNotNull(context.getDrawable(CoreCommonR.drawable.ic_notification_small))
+            .toBitmap(96, 96, Bitmap.Config.ARGB_8888))
+    } else Icon.createWithResource(context, CoreCommonR.drawable.ic_notification_small)
 
 internal fun resolveXiaomiIslandShare(song: SongItem?, shareUrl: String?): Pair<SongItem, String>? {
     val currentSong = song ?: return null
@@ -110,6 +119,7 @@ internal class AndroidPlaybackServicePresentationPort(
         .build()
     private var mediaSession: MediaSession? = null
     private val vivoMusicIsland = VivoMusicIslandBridge(context)
+    private val smallIcon by lazy { createPlaybackNotificationIcon(context) }
 
     override fun initializeSession(callback: MediaSession.Callback) {
         mediaSession = MediaSession(context, "NeriPlayerSession").apply {
@@ -151,7 +161,7 @@ internal class AndroidPlaybackServicePresentationPort(
 
     override fun buildBootstrapNotification(): Notification {
         val builder = Notification.Builder(context, AudioPlayerService.CHANNEL_ID)
-            .setSmallIcon(CoreCommonR.drawable.ic_notification_small)
+            .setSmallIcon(smallIcon)
             .setContentTitle(context.getString(CoreCommonR.string.app_name))
             .setContentText(context.getString(CoreCommonR.string.player_notification_preparing))
             .setContentIntent(mainActivityPendingIntent())
@@ -267,7 +277,7 @@ internal class AndroidPlaybackServicePresentationPort(
 
     private fun mediaNotificationBuilder(contentIntent: PendingIntent): Notification.Builder =
         Notification.Builder(context, AudioPlayerService.CHANNEL_ID)
-            .setSmallIcon(CoreCommonR.drawable.ic_notification_small)
+            .setSmallIcon(smallIcon)
             .setContentIntent(contentIntent)
             .setCategory(Notification.CATEGORY_TRANSPORT)
             .setVisibility(Notification.VISIBILITY_PUBLIC)

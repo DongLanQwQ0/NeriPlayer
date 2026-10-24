@@ -48,6 +48,7 @@ internal class VivoMusicIslandBridge(private val context: Context) {
     private var published = false
     private var capabilityFailureLogged = false
     private val cardArtwork = VivoMusicCardArtwork(context)
+    private val smallIcon by lazy { createPlaybackNotificationIcon(context) }
     private val progressMotion = VivoMusicProgressMotion()
     private val animatedCard by lazy { VivoMusicAnimatedCard(context) }
     private val drawingControls = mutableMapOf<Pair<String, String>, PendingIntent>()
@@ -209,6 +210,8 @@ internal class VivoMusicIslandBridge(private val context: Context) {
         progressMotion.update(song.stableKey(), inputs.durationMs, inputs.positionMs,
             inputs.playbackControlPlaying && !inputs.audioRouteMuted, SystemClock.elapsedRealtime())
         cardArtwork.update(inputs.artwork)
+        val backdrop = if (VivoMusicAnimatedCard.supported())
+            animatedCard.prepareBackground(checkNotNull(cardArtwork.background)) else null
         val open = openIntent
         val icon = cardArtwork.cover?.let(Icon::createWithBitmap)
             ?: Icon.createWithResource(context, CommonR.drawable.ic_notification_small)
@@ -222,7 +225,7 @@ internal class VivoMusicIslandBridge(private val context: Context) {
             putBoolean(PREFIX + "dismissWhenKill", true)
             putBoolean(PREFIX + "disableInvertColor", true)
             putParcelable(PREFIX + "clickResp", open)
-            putParcelable(PREFIX + "customTemplate", card(inputs, open, false))
+            putParcelable(PREFIX + "customTemplate", card(inputs, open, false, backdrop))
             putBundle(PREFIX + "baseInfos", Bundle().apply {
                 putParcelable(PREFIX + "baseInfos.icon", icon)
                 putCharSequence(PREFIX + "baseInfos.title", title)
@@ -240,7 +243,7 @@ internal class VivoMusicIslandBridge(private val context: Context) {
                 })
                 putInt("island.superx.islandClick", 0)
                 putInt("island.superx.template", CUSTOM_TEMPLATE)
-                putParcelable("island.superx.customTemplate", card(inputs, open, true))
+                putParcelable("island.superx.customTemplate", card(inputs, open, true, backdrop))
                 putParcelable("island.superx.clickResp", open)
             })
             putBundle(PREFIX + "capsule", Bundle().apply {
@@ -251,14 +254,15 @@ internal class VivoMusicIslandBridge(private val context: Context) {
             })
         }
         return Notification.Builder(context, CHANNEL)
-            .setSmallIcon(CommonR.drawable.ic_notification_small)
+            .setSmallIcon(smallIcon)
             .setContentTitle(title).setContentText(artist).setContentIntent(open)
             .setCategory(Notification.CATEGORY_TRANSPORT).setVisibility(Notification.VISIBILITY_PUBLIC)
             .setOnlyAlertOnce(true).setShowWhen(false).setOngoing(true).addExtras(data).build()
     }
 
     @android.annotation.TargetApi(Build.VERSION_CODES.S)
-    private fun card(inputs: PlaybackServiceNotificationRenderInputs, open: PendingIntent, cameraSafe: Boolean): RemoteViews {
+    private fun card(inputs: PlaybackServiceNotificationRenderInputs, open: PendingIntent, cameraSafe: Boolean,
+        backdrop: VivoMusicBackdropTransition.Frame?): RemoteViews {
         val xml = classicCard(inputs, open, cameraSafe)
         // Preserve the existing card on older hosts; the verified OriginOS 6 host draws format 6.
         if (!VivoMusicAnimatedCard.supported()) return xml
@@ -272,7 +276,7 @@ internal class VivoMusicIslandBridge(private val context: Context) {
             R.id.vivo_music_favorite to if (inputs.interactiveFavorite) open else
                 drawingControl(AudioPlayerService.ACTION_TOGGLE_FAV, songKey, 11),
         )
-        return animatedCard.render(xml, inputs, checkNotNull(cardArtwork.background), cameraSafe,
+        return animatedCard.render(xml, inputs, backdrop ?: animatedCard.prepareBackground(checkNotNull(cardArtwork.background)), cameraSafe,
             progressMotion.frame(SystemClock.elapsedRealtime()), actions, seekIntents)
     }
 

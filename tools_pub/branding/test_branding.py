@@ -13,6 +13,13 @@ RESOURCES = ROOT / "app/src/vivoRelease/res"
 
 
 class BrandingTest(unittest.TestCase):
+    def test_notification_glyph_reuses_the_transparent_ribbon_without_a_backplate(self):
+        icon = ET.parse(RESOURCES / "drawable-nodpi/ic_notification_small.xml").getroot()
+        namespace = "{http://schemas.android.com/apk/res/android}"
+        self.assertEqual("inset", icon.tag)
+        self.assertEqual("@drawable/vivo_brand_monochrome", icon.get(namespace + "drawable"))
+        self.assertEqual([], list(icon))
+
     def test_source_and_android_export_keep_transparent_background_and_opening(self):
         for path in (SOURCE, OUTPUT):
             with self.subTest(path=path), Image.open(path) as artwork:

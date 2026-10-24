@@ -15,6 +15,7 @@ import android.widget.TextView
 import androidx.annotation.RequiresApi
 import androidx.annotation.ChecksSdkIntAtLeast
 import androidx.compose.remote.core.RcPlatformServices
+import androidx.compose.remote.core.RemoteContext
 import androidx.compose.remote.core.operations.ConditionalOperations
 import androidx.compose.remote.core.operations.RootContentBehavior
 import androidx.compose.remote.core.operations.layout.managers.BoxLayout
@@ -23,6 +24,8 @@ import androidx.compose.remote.core.operations.layout.managers.RowLayout
 import androidx.compose.remote.core.operations.Utils
 import androidx.compose.remote.core.semantics.AccessibleComponent
 import androidx.compose.remote.core.operations.utilities.AnimatedFloatExpression.*
+import androidx.compose.remote.core.operations.utilities.easing.Easing
+import androidx.compose.remote.core.operations.utilities.easing.FloatAnimation
 import androidx.compose.remote.creation.RemoteComposeWriter
 import androidx.compose.remote.creation.actions.Action
 import androidx.compose.remote.creation.actions.HostAction
@@ -41,6 +44,7 @@ import moe.ouom.neriplayer.core.player.service.notification.notificationSeekPosi
 @RequiresApi(35)
 @Suppress("RestrictedApi")
 internal class VivoMusicAnimatedCard(private val context: Context) {
+    fun prepareBackground(background: Bitmap) = backdropTransition.update(background, SystemClock.elapsedRealtime())
     private data class Surface(
         val key: PlaybackServiceNotificationRenderInputs,
         val bitmap: Bitmap,
@@ -69,7 +73,7 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
     fun render(
         xml: RemoteViews,
         inputs: PlaybackServiceNotificationRenderInputs,
-        background: Bitmap,
+        backdrop: VivoMusicBackdropTransition.Frame,
         cameraSafe: Boolean,
         motion: VivoMusicProgressMotion.Frame,
         actions: Map<Int, PendingIntent>,
@@ -86,7 +90,6 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
         }
         val width = surface.bitmap.width
         val height = surface.bitmap.height
-        val backdrop = backdropTransition.update(background, SystemClock.elapsedRealtime())
         val retained = java.util.Collections.newSetFromMap(IdentityHashMap<Bitmap, Boolean>()).apply {
             surfaces.values.forEach { add(it.bitmap); addAll(it.icons.values.flatten()) }
             add(backdrop.from); add(backdrop.to)
@@ -98,7 +101,6 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
         val now = Calendar.getInstance()
         val anchor = now.get(Calendar.MINUTE) * 60f + now.get(Calendar.SECOND) + now.get(Calendar.MILLISECOND) / 1000f
         val startedAt = writer.addFloatConstant(anchor)
-        val documentStartedAt = writer.addFloatConstant(anchor)
         val from = writer.addFloatConstant(motion.from)
         val target = writer.addFloatConstant(motion.target)
         val seconds = writer.addFloatConstant((motion.remainingMs / 1000f).coerceAtLeast(0.001f))
@@ -111,10 +113,13 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
         writer.startCanvas(RecordingModifier().size(width, height))
         // Expressions must belong to a painted canvas so host click actions can evaluate them.
         val clock = writer.floatExpression(RemoteComposeWriter.TIME_IN_CONTINUOUS_SEC)
-        val backgroundElapsed = writer.floatExpression(clock, documentStartedAt, SUB,
-            5400f, ADD, 3600f, MOD, 1800f, SUB, 0f, MAX)
-        val backgroundAlpha = writer.floatExpression(backgroundElapsed,
-            VivoMusicBackdropTransition.DURATION_MS / 1000f, DIV, backdrop.alpha, ADD, 1f, MIN)
+        // Start the fade in the host, not while encoding/transporting the notification.
+        // Format 6 needs a live dependency to reevaluate the animated value on each host frame.
+        // Its animation clock starts in the host; multiplying by zero keeps the target fixed.
+        val backgroundAlpha = if (backdrop.from === backdrop.to) 1f else writer.floatExpression(
+            floatArrayOf(1f, RemoteContext.FLOAT_ANIMATION_TIME, 0f, MUL, ADD), FloatAnimation.packToFloatArray(
+            (1f - backdrop.alpha) * VivoMusicBackdropTransition.DURATION_MS / 1000f,
+            Easing.CUBIC_LINEAR, null, backdrop.alpha, Float.NaN))
         // The host clock wraps once per hour. Seek and playback must continue across that boundary.
         val elapsed = writer.floatExpression(clock, startedAt, SUB, 5400f, ADD, 3600f, MOD, 1800f, SUB, 0f, MAX)
         val t = writer.floatExpression(elapsed, seconds, DIV, 0f, MAX, 1f, MIN)
