@@ -302,7 +302,7 @@ internal class VivoMusicIslandBridge(private val context: Context) {
         return animatedCard.render(xml, inputs, { width, height ->
             animatedCard.prepareBackground(cardArtwork.backgroundFor(width, height), cameraSafe, backgroundTime)
         }, cameraSafe,
-            progressMotion.frame(SystemClock.elapsedRealtime()), actions, seekIntents)
+            progressMotion.frame(SystemClock.elapsedRealtime()), actions, seekIntents, backgroundTime)
     }
 
     @android.annotation.TargetApi(Build.VERSION_CODES.S)
@@ -354,7 +354,7 @@ internal class VivoMusicIslandBridge(private val context: Context) {
             // Match the native music surface on the verified firmware, including the camera-safe header.
             val horizontal = (27 * density).toInt()
             val top = ((if (cameraSafe) 27 else 16) * density).toInt()
-            setViewPadding(R.id.vivo_music_card, horizontal, top, horizontal, (18 * density).toInt())
+            setViewPadding(R.id.vivo_music_card, horizontal, top, horizontal, (22 * density).toInt())
         }
 
     private fun ensureSeekIntents(songKey: String, durationMs: Long) {

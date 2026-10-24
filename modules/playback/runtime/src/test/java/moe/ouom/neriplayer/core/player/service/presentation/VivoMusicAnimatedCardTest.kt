@@ -269,6 +269,7 @@ class VivoMusicAnimatedCardTest {
         assertTrue("No intermediate rendered frame: $before,$first,$middle,$after", middle in (before + 3)..(after - 3))
         assertTrue("Seek did not settle: $after", after > bounds.width() * 0.7)
         tap(0.2f)
+        width("retarget-start")
         Thread.sleep(160)
         val beforeRetarget = width("retarget-before")
         tap(0.95f)

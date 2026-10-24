@@ -18,7 +18,7 @@
             </LinearLayout>
         </LinearLayout>
         <LinearLayout android:id="@+id/vivo_music_progress_row" android:layout_width="match_parent"
-            android:layout_height="28dp" android:layout_marginTop="1dp" android:gravity="center_vertical">
+            android:layout_height="24dp" android:layout_marginTop="1dp" android:gravity="center_vertical">
             <TextView android:id="@+id/vivo_music_elapsed" android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:minWidth="24dp" android:textSize="10sp" android:textColor="#B8BDC4" />
             <FrameLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
@@ -32,7 +32,7 @@
             <TextView android:id="@+id/vivo_music_duration" android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:minWidth="24dp" android:gravity="end" android:textSize="10sp" android:textColor="#B8BDC4" />
         </LinearLayout>
-        <LinearLayout android:layout_width="match_parent" android:layout_height="40dp" android:gravity="center_vertical"
+        <LinearLayout android:id="@+id/vivo_music_controls" android:layout_width="match_parent" android:layout_height="40dp" android:gravity="center_vertical"
             android:layout_marginStart="-12dp" android:layout_marginEnd="-7dp">
             <ImageView android:id="@+id/vivo_music_app" android:layout_width="44dp" android:layout_height="40dp" android:padding="8dp" />
             <LinearLayout android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
