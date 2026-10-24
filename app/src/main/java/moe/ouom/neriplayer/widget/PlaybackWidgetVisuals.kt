@@ -107,7 +107,7 @@ internal const val PLAYBACK_WIDGET_ARTWORK_MAX_DIMENSION_PX = 512
 private const val SURFACE_MAX_DIMENSION_PX = 2048
 private const val SURFACE_MAX_PIXELS = 1024 * 1024
 private const val BACKDROP_BLUR_SOURCE_MAX_PX = PLAYBACK_WIDGET_ARTWORK_MAX_DIMENSION_PX
-private const val BACKDROP_BLUR_RADIUS_PX = 6
+private const val BACKDROP_BLUR_RADIUS_PX = 12
 private const val BACKDROP_CACHE_MAX_BYTES = 8 * 1024 * 1024
 private const val MINI_SCRIM_START_COLOR = 0x99000000.toInt()
 private const val MINI_SCRIM_END_COLOR = 0xB3000000.toInt()
@@ -167,7 +167,7 @@ internal fun playbackWidgetBackdrop(
 }
 
 /**
- * 保留高清封面的采样像素，直接在工作图上做 6px 模糊，避免低清放大与过度模糊。
+ * 保留高清封面的采样像素，直接在工作图上做 12px 模糊，避免低清放大。
  * 逐级缩小抑制混叠，滑动窗口模糊保持线性开销。
  */
 internal fun playbackWidgetBlurSource(artwork: Bitmap, targetWidth: Int, targetHeight: Int): Bitmap {
