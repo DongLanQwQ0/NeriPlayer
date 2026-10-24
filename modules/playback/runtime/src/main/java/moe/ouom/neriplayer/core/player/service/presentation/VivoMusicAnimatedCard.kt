@@ -17,6 +17,7 @@ import androidx.annotation.ChecksSdkIntAtLeast
 import androidx.compose.remote.core.RcPlatformServices
 import androidx.compose.remote.core.RemoteContext
 import androidx.compose.remote.core.operations.ConditionalOperations
+import androidx.compose.remote.core.operations.RootContentBehavior
 import androidx.compose.remote.core.operations.layout.managers.BoxLayout
 import androidx.compose.remote.core.operations.layout.managers.ColumnLayout
 import androidx.compose.remote.core.operations.layout.managers.RowLayout
@@ -102,15 +103,8 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
         }
         encodedImages.keys.retainAll(retained)
         val writer = RemoteComposeWriter(width, height, "NeriPlayer music", 6, 0, platform)
-        // Root SCALE modes transform paint but not layout hit regions in the Android 16 host.
-        // Keep the XML's 360dp content size and center the entire interactive card instead
-        // of enlarging it to the landscape host's width and clipping its top/bottom.
-        val progress = surface.bounds.getValue(R.id.vivo_music_progress)
-        val row = surface.bounds.getValue(R.id.vivo_music_progress_row)
-        val headerHeight = if (inputs.durationMs > 0L) row.top else surface.bounds.getValue(R.id.vivo_music_app).top
-        val controlHeight = height - if (inputs.durationMs > 0L) row.bottom else headerHeight
-        val controlIds = listOf(R.id.vivo_music_app, R.id.vivo_music_previous, R.id.vivo_music_play,
-            R.id.vivo_music_next, R.id.vivo_music_favorite)
+        writer.setRootContentBehavior(RootContentBehavior.NONE, RootContentBehavior.ALIGNMENT_CENTER,
+            RootContentBehavior.SIZING_SCALE, RootContentBehavior.SCALE_FILL_WIDTH)
         val now = Calendar.getInstance()
         val anchor = now.get(Calendar.MINUTE) * 60f + now.get(Calendar.SECOND) + now.get(Calendar.MILLISECOND) / 1000f
         val startedAt = writer.addFloatConstant(anchor)
@@ -126,9 +120,7 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
         }.associateWith { id -> writer.addFloatConstant(if (if (id == R.id.vivo_music_play)
             inputs.playbackControlPlaying && !inputs.audioRouteMuted else inputs.favorite) 1f else 0f) }
         writer.startRoot()
-        writer.startBox(RecordingModifier().fillMaxSize(), BoxLayout.CENTER, BoxLayout.CENTER)
         writer.startBox(RecordingModifier().size(width, height), BoxLayout.START, BoxLayout.TOP)
-        fun size(w: Float, h: Float) = RecordingModifier().width(w).height(h)
         writer.startCanvas(RecordingModifier().size(width, height))
         // Expressions must belong to a painted canvas so host click actions can evaluate them.
         val clock = writer.floatExpression(RemoteComposeWriter.TIME_IN_CONTINUOUS_SEC)
@@ -150,7 +142,7 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
         val toggled = localChecked.mapValues { (_, checked) -> writer.floatExpression(1f, checked, SUB) }
         writer.endCanvas()
         fun hit(width: Float, height: Float, vararg onClick: Action, description: String? = null) {
-            val modifier = size(width, height).onClick(*onClick)
+            val modifier = RecordingModifier().width(width).height(height).onClick(*onClick)
             if (description != null) {
                 val label = writer.addText(description)
                 modifier.then(RecordingModifier.Element { instructions ->
@@ -161,10 +153,13 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
             writer.startCanvas(modifier)
             writer.endCanvas()
         }
-        writer.startColumn(size(width.toFloat(), height.toFloat()), ColumnLayout.START, ColumnLayout.TOP)
+        val progress = surface.bounds.getValue(R.id.vivo_music_progress)
+        val row = surface.bounds.getValue(R.id.vivo_music_progress_row)
+        val headerHeight = if (inputs.durationMs > 0L) row.top else surface.bounds.getValue(R.id.vivo_music_app).top
+        writer.startColumn(RecordingModifier().size(width, height), ColumnLayout.START, ColumnLayout.TOP)
         hit(width.toFloat(), headerHeight, HostAction(R.id.vivo_music_card), description = inputs.text)
         if (inputs.durationMs > 0L) {
-            writer.startRow(size(width.toFloat(), row.height()), RowLayout.START, RowLayout.TOP)
+            writer.startRow(RecordingModifier().width(width.toFloat()).height(row.height()), RowLayout.START, RowLayout.TOP)
             hit(progress.left, row.height())
             seeks.forEachIndexed { step, _ ->
                 hit(progress.width() / seeks.size, row.height(),
@@ -182,9 +177,11 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
             }
             writer.endRow()
         }
-        writer.startRow(size(width.toFloat(), controlHeight), RowLayout.START, RowLayout.TOP)
+        val controlHeight = height - if (inputs.durationMs > 0L) row.bottom else headerHeight
+        writer.startRow(RecordingModifier().width(width.toFloat()).height(controlHeight), RowLayout.START, RowLayout.TOP)
         var cursor = 0f
-        for (id in controlIds) {
+        for (id in listOf(R.id.vivo_music_app, R.id.vivo_music_previous, R.id.vivo_music_play,
+            R.id.vivo_music_next, R.id.vivo_music_favorite)) {
             val rect = surface.bounds.getValue(id)
             hit((rect.left - cursor).coerceAtLeast(0f), controlHeight)
             val checked = localChecked[id]
@@ -198,21 +195,7 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
         writer.endRow()
         writer.endColumn()
         // Paint above hit regions so Android's default click ripple cannot flash across the card.
-        writer.startCanvas(size(width.toFloat(), height.toFloat()))
-        writer.save()
-        // Clip the inset card itself while retaining compact opaque JPEG backdrop payloads.
-        val radius = 20f * context.resources.displayMetrics.density
-        val outline = writer.pathCreate(radius, 0f)
-        writer.pathAppendLineTo(outline, width - radius, 0f)
-        writer.pathAppendQuadTo(outline, width.toFloat(), 0f, width.toFloat(), radius)
-        writer.pathAppendLineTo(outline, width.toFloat(), height - radius)
-        writer.pathAppendQuadTo(outline, width.toFloat(), height.toFloat(), width - radius, height.toFloat())
-        writer.pathAppendLineTo(outline, radius, height.toFloat())
-        writer.pathAppendQuadTo(outline, 0f, height.toFloat(), 0f, height - radius)
-        writer.pathAppendLineTo(outline, 0f, radius)
-        writer.pathAppendQuadTo(outline, 0f, 0f, radius, 0f)
-        writer.pathAppendClose(outline)
-        writer.addClipPath(outline)
+        writer.startCanvas(RecordingModifier().size(width, height))
         writer.rcPaint.setAlpha(1f).commit()
         writer.drawBitmap(backdrop.from, 0f, 0f, width.toFloat(), height.toFloat(), null)
         if (backdrop.from !== backdrop.to) {
@@ -247,9 +230,7 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
             writer.drawTextRun(elapsedText, 0, elapsedText.length, 0, elapsedText.length,
                 elapsedBounds.left, surface.elapsedBaseline, false)
         }
-        writer.restore()
         writer.endCanvas()
-        writer.endBox()
         writer.endBox()
         writer.endRoot()
         return RemoteViews(RemoteViews.DrawInstructions.Builder(listOf(writer.encodeToByteArray())).build()).apply {
