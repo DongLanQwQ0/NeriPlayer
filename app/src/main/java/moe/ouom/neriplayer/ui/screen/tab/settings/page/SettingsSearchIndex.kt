@@ -93,6 +93,7 @@ internal fun searchSettingsEntries(
 }
 
 internal fun AutoSettingInfo.settingsPage(): SettingsPage? {
+    if (keyName.startsWith("vivo_island_")) return SettingsPage.VivoIsland
     if (keyName in LyricAppearanceSettingKeys) {
         return SettingsPage.Lyrics
     }
@@ -875,6 +876,7 @@ private val PageSearchAliases = mapOf(
     SettingsPage.NowPlaying to listOf("now playing", "player", "cover", "badge", "controls", "immersive", "bofangye", "fengmian"),
     SettingsPage.Background to listOf("background", "wallpaper", "image", "beijing", "bizhi"),
     SettingsPage.Language to listOf("language", "locale", "international", "yuyan", "guojihua"),
+    SettingsPage.VivoIsland to listOf("vivo", "island", "blur", "mask", "原子岛", "模糊", "遮罩"),
     SettingsPage.ExternalLyrics to listOf(
         "floating", "desktop lyrics", "status bar", "island", "bluetooth", "lyricon", "amll",
         "live update", "xuanfu", "zhuangtailan", "lingdongdao", "chaojidao"

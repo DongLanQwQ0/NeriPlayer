@@ -1,0 +1,9 @@
+<resources>
+    <string name="settings_vivo_island_title">原子岛</string>
+    <string name="settings_vivo_island_background">专辑背景</string>
+    <string name="settings_vivo_island_mask">遮罩浓度</string>
+    <string name="settings_vivo_island_blur">模糊半径</string>
+    <string name="settings_vivo_island_percent">%1$d%%</string>
+    <string name="settings_vivo_island_pixels">%1$d px</string>
+    <string name="settings_vivo_island_reset">恢复默认</string>
+</resources>

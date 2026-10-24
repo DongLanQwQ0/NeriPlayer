@@ -72,6 +72,11 @@ internal enum class SettingsPage(
         descriptionRes = CoreCommonR.string.settings_page_background_desc,
         icon = Icons.Outlined.Wallpaper
     ),
+    VivoIsland(
+        titleRes = CoreCommonR.string.settings_vivo_island_title,
+        descriptionRes = CoreCommonR.string.settings_vivo_island_background,
+        icon = VivoIslandGlyph
+    ),
     Motion(
         AutoSettingsSchema.motion.metadata,
         Icons.Outlined.Bolt
@@ -173,6 +178,7 @@ internal val SettingsHomePageGroups: List<List<SettingsPage>> = listOf(
         SettingsPage.Theme,
         SettingsPage.NowPlaying,
         SettingsPage.Background,
+        SettingsPage.VivoIsland,
         SettingsPage.Personalization,
         SettingsPage.Motion
     ),

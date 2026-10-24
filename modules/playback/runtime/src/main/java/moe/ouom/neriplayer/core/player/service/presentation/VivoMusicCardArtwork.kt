@@ -9,6 +9,7 @@ import android.graphics.LinearGradient
 import android.graphics.RectF
 import android.graphics.Shader
 import androidx.core.graphics.drawable.toBitmap
+import moe.ouom.neriplayer.data.model.settings.appearance.VivoMusicIslandAppearance
 
 /** Small, cached bitmaps keep progress-only RemoteViews updates within the Binder budget. */
 internal class VivoMusicCardArtwork(context: Context) {
@@ -17,14 +18,13 @@ internal class VivoMusicCardArtwork(context: Context) {
         const val BACKDROP_HEIGHT = 180
         const val SAMPLE_WIDTH = 64
         const val SAMPLE_HEIGHT = 36
-        const val BLUR_RADIUS = 2
         const val BLUR_PASSES = 3
-        const val TOP_SCRIM_ALPHA = 0xB8
-        const val BOTTOM_SCRIM_ALPHA = 0xD6
     }
 
     private var source: Bitmap? = null
     private var initialized = false
+    private var appearance = VivoMusicIslandAppearance()
+    private var blurredSample: Bitmap? = null
     var cover: Bitmap? = null
         private set
     var background: Bitmap? = null
@@ -33,37 +33,47 @@ internal class VivoMusicCardArtwork(context: Context) {
         rounded(context.applicationInfo.loadIcon(context.packageManager).toBitmap(80, 80), 40f)
     }
 
-    fun update(artwork: Bitmap?) {
-        if (initialized && source === artwork) return
+    fun update(artwork: Bitmap?, appearance: VivoMusicIslandAppearance = VivoMusicIslandAppearance()) {
+        val next = appearance.normalized()
+        val sourceChanged = !initialized || source !== artwork
+        if (!sourceChanged && this.appearance == next) return
+        if (sourceChanged) cover = artwork?.let { rounded(it, it.width * 0.14f) }
+        if (sourceChanged || this.appearance.blurRadius != next.blurRadius) {
+            blurredSample?.recycle()
+            blurredSample = artwork?.let { createBlurredSample(it, next.blurRadius) }
+        }
         initialized = true
         source = artwork
-        cover = artwork?.let { rounded(it, it.width * 0.14f) }
-        background = backdrop(artwork)
+        this.appearance = next
+        background = backdrop(blurredSample, next)
     }
 
-    private fun backdrop(artwork: Bitmap?): Bitmap =
+    private fun createBlurredSample(artwork: Bitmap, radius: Int): Bitmap {
+        val sample = croppedSample(artwork, Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
+        if (radius == 0) return sample
+        val pixels = IntArray(SAMPLE_WIDTH * SAMPLE_HEIGHT)
+        val scratch = IntArray(pixels.size)
+        sample.getPixels(pixels, 0, SAMPLE_WIDTH, 0, 0, SAMPLE_WIDTH, SAMPLE_HEIGHT)
+        repeat(BLUR_PASSES) {
+            blurAxis(pixels, scratch, horizontal = true, radius)
+            blurAxis(scratch, pixels, horizontal = false, radius)
+        }
+        sample.setPixels(pixels, 0, SAMPLE_WIDTH, 0, 0, SAMPLE_WIDTH, SAMPLE_HEIGHT)
+        return sample
+    }
+
+    private fun backdrop(sample: Bitmap?, appearance: VivoMusicIslandAppearance): Bitmap =
         Bitmap.createBitmap(BACKDROP_WIDTH, BACKDROP_HEIGHT, Bitmap.Config.ARGB_8888).also { result ->
             val canvas = Canvas(result)
             canvas.drawColor(Color.rgb(23, 26, 32))
             val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-            if (artwork != null) {
-                val sample = croppedSample(artwork, paint)
-                val pixels = IntArray(SAMPLE_WIDTH * SAMPLE_HEIGHT)
-                val scratch = IntArray(pixels.size)
-                sample.getPixels(pixels, 0, SAMPLE_WIDTH, 0, 0, SAMPLE_WIDTH, SAMPLE_HEIGHT)
-                // Three separable box passes approximate a Gaussian at a bounded, small size.
-                repeat(BLUR_PASSES) {
-                    blurAxis(pixels, scratch, horizontal = true)
-                    blurAxis(scratch, pixels, horizontal = false)
-                }
-                sample.setPixels(pixels, 0, SAMPLE_WIDTH, 0, 0, SAMPLE_WIDTH, SAMPLE_HEIGHT)
+            if (sample != null) {
                 canvas.drawBitmap(sample, null,
                     RectF(0f, 0f, BACKDROP_WIDTH.toFloat(), BACKDROP_HEIGHT.toFloat()), paint)
-                sample.recycle()
             }
             paint.shader = LinearGradient(0f, 0f, 0f, BACKDROP_HEIGHT.toFloat(),
-                intArrayOf(Color.argb(TOP_SCRIM_ALPHA, 0, 0, 0),
-                    Color.argb(BOTTOM_SCRIM_ALPHA, 0, 0, 0)),
+                intArrayOf(Color.argb(appearance.topScrimAlpha, 0, 0, 0),
+                    Color.argb(appearance.bottomScrimAlpha, 0, 0, 0)),
                 null, Shader.TileMode.CLAMP)
             canvas.drawRect(0f, 0f, BACKDROP_WIDTH.toFloat(), BACKDROP_HEIGHT.toFloat(), paint)
         }
@@ -81,13 +91,13 @@ internal class VivoMusicCardArtwork(context: Context) {
             }
         }
 
-    private fun blurAxis(input: IntArray, output: IntArray, horizontal: Boolean) {
-        val count = BLUR_RADIUS * 2 + 1
+    private fun blurAxis(input: IntArray, output: IntArray, horizontal: Boolean, radius: Int) {
+        val count = radius * 2 + 1
         for (y in 0 until SAMPLE_HEIGHT) for (x in 0 until SAMPLE_WIDTH) {
             var red = 0
             var green = 0
             var blue = 0
-            for (offset in -BLUR_RADIUS..BLUR_RADIUS) {
+            for (offset in -radius..radius) {
                 val sx = if (horizontal) (x + offset).coerceIn(0, SAMPLE_WIDTH - 1) else x
                 val sy = if (horizontal) y else (y + offset).coerceIn(0, SAMPLE_HEIGHT - 1)
                 val color = input[sy * SAMPLE_WIDTH + sx]

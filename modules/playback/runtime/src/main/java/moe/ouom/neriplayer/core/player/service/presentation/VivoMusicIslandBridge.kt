@@ -30,6 +30,12 @@ import moe.ouom.neriplayer.core.player.service.notification.favoriteActionTitle
 import moe.ouom.neriplayer.core.player.service.notification.NOTIFICATION_SEEK_STEPS
 import moe.ouom.neriplayer.core.player.service.notification.notificationSeekPosition
 import moe.ouom.neriplayer.data.identity.stableKey
+import moe.ouom.neriplayer.data.model.settings.appearance.VivoMusicIslandAppearance
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 /** Independent of the native Walkman browser; only posts when this app's own scene is enabled. */
 internal class VivoMusicIslandBridge(private val context: Context) {
@@ -48,6 +54,8 @@ internal class VivoMusicIslandBridge(private val context: Context) {
     private var published = false
     private var capabilityFailureLogged = false
     private val cardArtwork = VivoMusicCardArtwork(context)
+    private var appearance = VivoMusicIslandAppearance()
+    private var appearanceJob: Job? = null
     private val smallIcon by lazy { createPlaybackNotificationIcon(context) }
     private val progressMotion = VivoMusicProgressMotion()
     private val animatedCard by lazy { VivoMusicAnimatedCard(context) }
@@ -145,6 +153,7 @@ internal class VivoMusicIslandBridge(private val context: Context) {
             clear()
             return
         }
+        observeAppearance()
         if (VivoMusicAnimatedCard.supported() && deferSeekPublication(inputs)) return
         manager.createNotificationChannel(NotificationChannel(
             CHANNEL, context.getString(R.string.vivo_music_island), NotificationManager.IMPORTANCE_LOW,
@@ -181,6 +190,19 @@ internal class VivoMusicIslandBridge(private val context: Context) {
         return true
     }
 
+    private fun observeAppearance() {
+        if (appearanceJob?.isActive == true) return
+        appearanceJob = CoroutineScope(Dispatchers.Main.immediate).launch(start = CoroutineStart.LAZY) {
+            PlayerDependencies.repositories.settingsRepo.vivoMusicIslandAppearanceFlow.collect { next ->
+                if (next != appearance) {
+                    appearance = next
+                    lastInputs?.let(::publish)
+                }
+            }
+        }
+        appearanceJob?.start()
+    }
+
     private fun available(): Boolean {
         if (!manager.areNotificationsEnabled()) return false
         return try {
@@ -209,7 +231,7 @@ internal class VivoMusicIslandBridge(private val context: Context) {
         val artist = song.displayArtist()
         progressMotion.update(song.stableKey(), inputs.durationMs, inputs.positionMs,
             inputs.playbackControlPlaying && !inputs.audioRouteMuted, SystemClock.elapsedRealtime())
-        cardArtwork.update(inputs.artwork)
+        cardArtwork.update(inputs.artwork, appearance)
         val backdrop = if (VivoMusicAnimatedCard.supported())
             animatedCard.prepareBackground(checkNotNull(cardArtwork.background)) else null
         val open = openIntent
@@ -289,7 +311,7 @@ internal class VivoMusicIslandBridge(private val context: Context) {
             setTextViewText(R.id.vivo_music_artist,
                 inputs.lyricLine?.takeIf { it.isNotBlank() } ?: song.displayArtist())
             setOnClickPendingIntent(R.id.vivo_music_card, open)
-            cardArtwork.update(inputs.artwork)
+        cardArtwork.update(inputs.artwork, appearance)
             setImageViewBitmap(R.id.vivo_music_backdrop, cardArtwork.background)
             setImageViewBitmap(R.id.vivo_music_app, cardArtwork.appIcon)
             setContentDescription(R.id.vivo_music_app, context.getString(CommonR.string.app_name))
@@ -382,6 +404,8 @@ internal class VivoMusicIslandBridge(private val context: Context) {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE) }
 
     fun clear() {
+        appearanceJob?.cancel()
+        appearanceJob = null
         if (supported) runCatching {
             // OriginOS can replace the untagged identity with VIVO_SUPERX_TAG.
             manager.activeNotifications.filter { it.id == ID }.forEach {

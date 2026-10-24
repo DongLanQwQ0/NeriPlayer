@@ -14,6 +14,7 @@ import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import kotlin.math.abs
 import moe.ouom.neriplayer.feature.player.R
+import moe.ouom.neriplayer.data.model.settings.appearance.VivoMusicIslandAppearance
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
@@ -67,7 +68,7 @@ class VivoMusicCardArtworkTest {
         val row = (120..200).map { Color.red(bitmap.getPixel(it, 90)) }
         assertTrue(row.any { it in 5..30 })
         assertTrue(row.zipWithNext().all { (a, b) -> abs(a - b) <= 5 })
-        assertTrue(Color.red(bitmap.getPixel(10, 10)) <= 72)
+        assertTrue(Color.red(bitmap.getPixel(10, 10)) in 110..125)
         assertTrue(Color.red(bitmap.getPixel(10, 170)) < Color.red(bitmap.getPixel(10, 10)))
         val output = File("build/reports/vivo-artwork/blurred-cover.png")
         output.parentFile!!.mkdirs()
@@ -122,8 +123,49 @@ class VivoMusicCardArtworkTest {
         assertNull(renderer.cover)
         assertNotSame(previous, empty)
         val center = empty.getPixel(160, 90)
-        assertTrue(Color.red(center) <= 10 && Color.green(center) <= 10 && Color.blue(center) <= 10)
+        assertTrue(Color.red(center) <= 14 && Color.green(center) <= 14 && Color.blue(center) <= 16)
         renderer.update(null)
         assertSame(empty, renderer.background)
+    }
+
+    @Test
+    fun `mask and blur controls change actual pixels without regenerating the album cover`() {
+        val renderer = renderer()
+        val source = splitCover(vertical = true, first = Color.WHITE, second = Color.BLACK)
+        val defaults = VivoMusicIslandAppearance()
+        renderer.update(source, defaults)
+        val cover = renderer.cover
+        val original = renderer.background!!
+        renderer.update(source, defaults.copy(maskOpacityPercent = 0))
+        val bright = renderer.background!!
+        assertSame(cover, renderer.cover)
+        assertTrue(Color.red(bright.getPixel(20, 90)) > Color.red(original.getPixel(20, 90)))
+        assertEquals(255, Color.red(bright.getPixel(20, 90)))
+        renderer.update(source, defaults.copy(maskOpacityPercent = 0, blurRadius = 0))
+        val sharp = renderer.background!!
+        renderer.update(source, defaults.copy(maskOpacityPercent = 0, blurRadius = 12))
+        val blurred = renderer.background!!
+        val sharpTransition = (0 until 320).count { Color.red(sharp.getPixel(it, 90)) in 10..245 }
+        val blurredTransition = (0 until 320).count { Color.red(blurred.getPixel(it, 90)) in 10..245 }
+        assertTrue("Blur radius did not change the transition width", blurredTransition > sharpTransition + 30)
+        assertSame(cover, renderer.cover)
+        assertEquals(Color.WHITE, source.getPixel(10, 10))
+    }
+
+    @Test
+    fun `settings preview shares the real background and never binds playback controls`() {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        val preview = VivoMusicIslandPreview(context)
+        val source = splitCover(vertical = true)
+        preview.update(null, source, VivoMusicIslandAppearance(30, 6))
+        val expected = renderer().apply { update(source, VivoMusicIslandAppearance(30, 6)) }.background!!
+        val renderer = preview.javaClass.getDeclaredField("artworkRenderer").apply { isAccessible = true }
+            .get(preview) as VivoMusicCardArtwork
+        assertTrue(expected.sameAs(renderer.background!!))
+        assertTrue(!preview.hasOnClickListeners())
+        val output = File("build/reports/vivo-artwork/settings-preview.png")
+        output.parentFile!!.mkdirs()
+        val bitmap = (preview.drawable as android.graphics.drawable.BitmapDrawable).bitmap
+        output.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 }

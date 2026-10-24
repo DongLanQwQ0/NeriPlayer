@@ -1,0 +1,9 @@
+<resources>
+    <string name="settings_vivo_island_title">Origin Island</string>
+    <string name="settings_vivo_island_background">Album background</string>
+    <string name="settings_vivo_island_mask">Mask opacity</string>
+    <string name="settings_vivo_island_blur">Blur radius</string>
+    <string name="settings_vivo_island_percent">%1$d%%</string>
+    <string name="settings_vivo_island_pixels">%1$d px</string>
+    <string name="settings_vivo_island_reset">Reset to default</string>
+</resources>

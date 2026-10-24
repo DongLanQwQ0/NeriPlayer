@@ -93,6 +93,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsWebDavDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSwitch
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.LocalSettingsPageNavigator
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.XiaomiSuperIslandSettingsPage
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.VivoMusicIslandSettings
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.LyricsPageCards
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.ExternalLyricsPageCards
 import moe.ouom.neriplayer.ui.screen.tab.settings.page.MiuixSettingsHeader
@@ -913,6 +914,12 @@ internal fun SettingsScreen(
                                     },
                                     modifier = Modifier.animateItem()
                                 )
+                            }
+                        },
+
+                        SettingsPage.VivoIsland to {
+                            miuixSettingsSectionCardItem(key = "${selectedPage.name}:background") {
+                                VivoMusicIslandSettings(repository)
                             }
                         },
 

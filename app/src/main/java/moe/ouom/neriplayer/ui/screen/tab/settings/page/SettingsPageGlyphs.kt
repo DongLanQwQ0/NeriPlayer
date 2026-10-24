@@ -68,6 +68,7 @@ internal fun SettingsPage.cleanGlyph(): SettingsPageGlyph = when (this) {
     SettingsPage.Theme -> SettingsPageGlyph(Icons.Rounded.Palette, Purple)
     SettingsPage.NowPlaying -> SettingsPageGlyph(Icons.Rounded.Album, Pink)
     SettingsPage.Background -> SettingsPageGlyph(Icons.Rounded.Wallpaper, Cyan)
+    SettingsPage.VivoIsland -> SettingsPageGlyph(VivoIslandGlyph, Orange)
     SettingsPage.Personalization -> SettingsPageGlyph(Icons.Rounded.Home, Blue)
     SettingsPage.Motion -> SettingsPageGlyph(Icons.Rounded.AutoAwesome, Orange)
     SettingsPage.Lyrics -> SettingsPageGlyph(Icons.Rounded.Lyrics, Violet)

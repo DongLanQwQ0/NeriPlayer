@@ -7,6 +7,8 @@ import moe.ouom.neriplayer.data.settings.appearance.EnhancedAdvancedBlurPreferen
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.appearance.UiDensityScalePreference
 import moe.ouom.neriplayer.data.model.settings.appearance.UiStyle
+import moe.ouom.neriplayer.data.model.settings.appearance.DEFAULT_VIVO_ISLAND_MASK_PERCENT
+import moe.ouom.neriplayer.data.model.settings.appearance.DEFAULT_VIVO_ISLAND_BLUR_RADIUS
 import moe.ouom.neriplayer.data.settings.download.DEFAULT_DOWNLOAD_BILI_AUDIO_QUALITY
 import moe.ouom.neriplayer.data.settings.download.DEFAULT_DOWNLOAD_NETEASE_AUDIO_QUALITY
 import moe.ouom.neriplayer.data.settings.download.DEFAULT_DOWNLOAD_YOUTUBE_AUDIO_QUALITY
@@ -1429,6 +1431,22 @@ object AutoSettingsSchema {
             titleRes = CoreCommonR.string.settings_xiaomi_super_island_lyric_enabled,
             descriptionRes = CoreCommonR.string.settings_xiaomi_super_island_lyric_enabled_desc,
             icon = AutoSettingIcon.AutoAwesome
+        )
+
+        @AutoSetting(order = 31, ui = SettingUiType.Custom)
+        val vivoIslandMaskPercent = autoIntSetting(
+            key = "vivo_island_mask_percent",
+            defaultValue = DEFAULT_VIVO_ISLAND_MASK_PERCENT,
+            titleRes = CoreCommonR.string.settings_vivo_island_mask,
+            descriptionRes = CoreCommonR.string.settings_vivo_island_title,
+        )
+
+        @AutoSetting(order = 32, ui = SettingUiType.Custom)
+        val vivoIslandBlurRadius = autoIntSetting(
+            key = "vivo_island_blur_radius",
+            defaultValue = DEFAULT_VIVO_ISLAND_BLUR_RADIUS,
+            titleRes = CoreCommonR.string.settings_vivo_island_blur,
+            descriptionRes = CoreCommonR.string.settings_vivo_island_title,
         )
 
         @AutoSetting(

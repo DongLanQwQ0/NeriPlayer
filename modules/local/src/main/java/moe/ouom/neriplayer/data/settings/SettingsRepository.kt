@@ -51,6 +51,9 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScales
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.data.model.settings.lyrics.BluetoothMetadataMode
+import moe.ouom.neriplayer.data.model.settings.appearance.VivoMusicIslandAppearance
+import moe.ouom.neriplayer.data.model.settings.appearance.DEFAULT_VIVO_ISLAND_MASK_PERCENT
+import moe.ouom.neriplayer.data.model.settings.appearance.DEFAULT_VIVO_ISLAND_BLUR_RADIUS
 import moe.ouom.neriplayer.data.settings.lyrics.LyricSourcePreferencePolicy
 import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsPosition
 import moe.ouom.neriplayer.data.model.settings.lyrics.normalizeFloatingLyricsMaxWidthDp
@@ -394,6 +397,21 @@ class SettingsRepository(private val context: Context) {
 
     val xiaomiSuperIslandSettingsFlow: Flow<XiaomiSuperIslandSettings> =
         dataStoreSettingFlow { XiaomiSuperIslandSettings.decode(it[XIAOMI_SUPER_ISLAND_SETTINGS]) }
+
+    val vivoMusicIslandAppearanceFlow: Flow<VivoMusicIslandAppearance> = dataStoreSettingFlow { prefs ->
+        VivoMusicIslandAppearance(
+            prefs[SettingsKeys.VIVO_ISLAND_MASK_PERCENT] ?: DEFAULT_VIVO_ISLAND_MASK_PERCENT,
+            prefs[SettingsKeys.VIVO_ISLAND_BLUR_RADIUS] ?: DEFAULT_VIVO_ISLAND_BLUR_RADIUS,
+        ).normalized()
+    }
+
+    suspend fun setVivoMusicIslandAppearance(appearance: VivoMusicIslandAppearance) {
+        val normalized = appearance.normalized()
+        context.dataStore.edit {
+            it[SettingsKeys.VIVO_ISLAND_MASK_PERCENT] = normalized.maskOpacityPercent
+            it[SettingsKeys.VIVO_ISLAND_BLUR_RADIUS] = normalized.blurRadius
+        }
+    }
 
     val floatingLyricsPreferencesFlow: Flow<FloatingLyricsPreferences> =
         dataStoreSettingFlow { prefs -> prefs.toFloatingLyricsPreferences() }
