@@ -172,6 +172,14 @@ CarMediaBrowserIntegrationTest#vivoQueueDirectoryReturnsTheExistingPlaybackQueue
 红心取消收藏后，原生面板变为“未收藏”，会话收藏操作随之更新，再次点按恢复“已收藏”。
 测试后已回到 Pray For You、恢复原收藏状态并暂停播放。通知去重及帧耗时仍待验收。
 
+生产连续动画故障回归
+2026-10-24，首次生产连续动画包在真机出现三次 ANR，未通过验收。
+11:00:17 与 11:00:36 的主线程栈停在 VivoMusicAnimatedCard 图片 PNG 编码；
+服务启动记录连续出现无人点按的 VIVO_SET_PLAYING / VIVO_SET_FAVORITE。
+离屏采集两种图标状态时，CheckBox 仍绑定真实 PendingIntent，修改 isChecked
+会触发播放与收藏命令，形成“生成卡片→改变播放/收藏→再次生成卡片”的循环。
+离屏截图必须在枚举图标状态前移除 checked-change 监听；真实点击只由远程文档处理。
+
 本机测试签名与重建
 历史 NeriPlayerChecks 与维护归档已按用户清理要求移除，旧 APK 和恢复脚本不再使用。
 测试包名 moe.ouom.neriplayer.debug，与正式应用分开安装。

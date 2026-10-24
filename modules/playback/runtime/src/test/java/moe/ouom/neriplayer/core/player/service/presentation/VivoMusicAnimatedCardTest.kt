@@ -23,6 +23,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import org.robolectric.annotation.LooperMode
@@ -40,6 +41,19 @@ class VivoMusicAnimatedCardTest {
     )
     private val open get() = PendingIntent.getBroadcast(context, 1, Intent("test.OPEN").setPackage(context.packageName),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+
+    @Test fun `rendering both icon states must never send playback or favorite commands`() {
+        val application = shadowOf(context as Application)
+        val bridge = VivoMusicIslandBridge(context)
+        val card = bridge.javaClass.getDeclaredMethod("card", PlaybackServiceNotificationRenderInputs::class.java,
+            PendingIntent::class.java, Boolean::class.javaPrimitiveType).apply { isAccessible = true }
+        for (checked in listOf(false, true)) for (cameraSafe in listOf(false, true)) {
+            card.invoke(bridge, inputs.copy(playbackControlPlaying = checked, favorite = checked), open, cameraSafe)
+            val command = application.nextStartedService
+            assertNull("Rendering sent a real player command: ${command?.action}", command)
+        }
+        bridge.clear()
+    }
 
     @Test fun `production card animates seeks and reuses static artwork on progress ticks`() {
         val bridge = VivoMusicIslandBridge(context)

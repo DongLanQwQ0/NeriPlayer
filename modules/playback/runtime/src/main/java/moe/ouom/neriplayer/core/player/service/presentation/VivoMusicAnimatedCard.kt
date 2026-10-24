@@ -213,6 +213,9 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
         }
         val icons = listOf(R.id.vivo_music_play, R.id.vivo_music_favorite).associateWith { id ->
             val box = root.findViewById<CheckBox>(id)
+            // This is an offscreen snapshot, not a user interaction. RemoteViews.apply binds
+            // real PendingIntents; sampling checked states must not send player commands.
+            box.setOnCheckedChangeListener(null)
             (0..1).map { selected ->
                 box.isChecked = selected == 1
                 box.jumpDrawablesToCurrentState()
