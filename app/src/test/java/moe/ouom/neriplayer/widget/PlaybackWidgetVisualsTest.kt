@@ -46,7 +46,7 @@ class PlaybackWidgetVisualsTest {
         assertEquals(16 to 16, blur.width to blur.height)
     }
 
-    @Test fun `compact blur uses four working pixels instead of magnifying the legacy radius`() {
+    @Test fun `compact blur uses six working pixels instead of magnifying the legacy radius`() {
         val cover = createBitmap(512, 512).apply {
             for (y in 0 until height) for (x in 0 until width) {
                 this[x, y] = if (x < 256) Color.WHITE else Color.BLACK
@@ -60,7 +60,7 @@ class PlaybackWidgetVisualsTest {
             val horizontal = artworkBoxBlurPass(pixels, 512, 512, radius, horizontal = true)
             return artworkBoxBlurPass(horizontal, 512, 512, radius, horizontal = false)
         }
-        val expected = blurred(4)
+        val expected = blurred(6)
         // The former 40px reference would expand radius 3 to radius 44 at this resolution.
         val previous = blurred(44)
         for (x in 0 until 512) assertEquals(expected[256 * 512 + x], actual[x, 256])
@@ -96,9 +96,9 @@ class PlaybackWidgetVisualsTest {
         for (x in 40 until plain.width - 41) {
             maxNeighborDelta = maxOf(maxNeighborDelta, abs(Color.red(plain[x, row]) - Color.red(plain[x + 1, row])))
         }
-        // A 9-tap kernel can change by at most 255/9 per source pixel; bilinear scaling
+        // A 13-tap kernel can change by at most 255/13 per source pixel; bilinear scaling
         // spreads that step over the output pixels, with one level allowed for rounding.
-        val maxFilteredStep = ceil(255f / 9f / (plain.width.toFloat() / stripes.width)).toInt() + 1
+        val maxFilteredStep = ceil(255f / 13f / (plain.width.toFloat() / stripes.width)).toInt() + 1
         assertTrue("adjacent pixels jump by $maxNeighborDelta", maxNeighborDelta <= maxFilteredStep)
         assertTrue(Color.red(scrimmed[240, 240]) < Color.red(plain[240, 240]))
         assertEquals(0, Color.alpha(plain[0, 0]))
