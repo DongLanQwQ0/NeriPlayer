@@ -231,8 +231,12 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
         root.background = null
         root.findViewById<View>(R.id.vivo_music_backdrop).visibility = View.INVISIBLE
         val width = (360 * context.resources.displayMetrics.density).roundToInt()
-        root.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+        // Measure content first so higher-resolution artwork cannot inflate the card.
+        val content = root.findViewById<View>(R.id.vivo_music_card)
+        content.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
             View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+        root.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(content.measuredHeight, View.MeasureSpec.EXACTLY))
         root.layout(0, 0, width, root.measuredHeight)
         val ids = listOf(R.id.vivo_music_card, R.id.vivo_music_app, R.id.vivo_music_previous, R.id.vivo_music_play,
             R.id.vivo_music_next, R.id.vivo_music_favorite, R.id.vivo_music_progress,

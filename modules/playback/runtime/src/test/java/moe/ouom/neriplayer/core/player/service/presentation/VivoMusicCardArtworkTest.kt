@@ -216,6 +216,8 @@ class VivoMusicCardArtworkTest {
         val preview = VivoMusicIslandPreview(context)
         val source = splitCover(vertical = true)
         preview.update(null, source, VivoMusicIslandAppearance(30, 6))
+        val previewBitmap = (preview.drawable as android.graphics.drawable.BitmapDrawable).bitmap
+        assertTrue("Backdrop resolution expanded the preview height", previewBitmap.width.toFloat() / previewBitmap.height > 2f)
         val expected = renderer().apply { update(source, VivoMusicIslandAppearance(30, 6)) }.background!!
         val renderer = preview.javaClass.getDeclaredField("artworkRenderer").apply { isAccessible = true }
             .get(preview) as VivoMusicCardArtwork

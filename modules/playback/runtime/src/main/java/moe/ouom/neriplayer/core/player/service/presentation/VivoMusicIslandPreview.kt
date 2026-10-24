@@ -42,11 +42,15 @@ class VivoMusicIslandPreview(context: Context) : AppCompatImageView(context) {
         card.findViewById<CheckBox>(R.id.vivo_music_play).isChecked = true
         card.findViewById<ProgressBar>(R.id.vivo_music_progress).progress = 0
         val density = resources.displayMetrics.density
-        card.findViewById<View>(R.id.vivo_music_card).setPadding(
+        val content = card.findViewById<View>(R.id.vivo_music_card)
+        content.setPadding(
             (27 * density).toInt(), (16 * density).toInt(), (27 * density).toInt(), (18 * density).toInt())
         val width = (360 * density).roundToInt()
-        card.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+        // Background bitmap resolution must not determine the displayed card height.
+        content.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
             View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+        card.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(content.measuredHeight, View.MeasureSpec.EXACTLY))
         card.layout(0, 0, width, card.measuredHeight)
         val bitmap = snapshot?.takeIf { it.width == width && it.height == card.height }
             ?: Bitmap.createBitmap(width, card.height, Bitmap.Config.ARGB_8888).also { snapshot = it }

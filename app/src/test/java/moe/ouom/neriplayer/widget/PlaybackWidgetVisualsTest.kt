@@ -45,6 +45,30 @@ class PlaybackWidgetVisualsTest {
         assertEquals(16 to 16, blur.width to blur.height)
     }
 
+    @Test fun `compact blur adds one reference pixel without reducing sampling resolution`() {
+        val cover = createBitmap(160, 160).apply {
+            for (y in 0 until height) for (x in 0 until width) {
+                this[x, y] = if (x < 80) Color.WHITE else Color.BLACK
+            }
+        }
+        val actual = playbackWidgetBlurSource(cover, 480, 480)
+        assertEquals(160 to 160, actual.width to actual.height)
+        val pixels = IntArray(160 * 160)
+        cover.getPixels(pixels, 0, 160, 0, 0, 160, 160)
+        fun blurred(radius: Int): IntArray {
+            val horizontal = artworkBoxBlurPass(pixels, 160, 160, radius, horizontal = true)
+            return artworkBoxBlurPass(horizontal, 160, 160, radius, horizontal = false)
+        }
+        // Reference radius 3 at 40px maps to radius 13 at 160px (previously 2 -> 9).
+        val expected = blurred(13)
+        val previous = blurred(9)
+        for (x in 0 until 160) assertEquals(expected[80 * 160 + x], actual[x, 80])
+        val newEdge = (0 until 160).count { Color.red(actual[it, 80]) in 10..245 }
+        val oldEdge = (0 until 160).count { Color.red(previous[80 * 160 + it]) in 10..245 }
+        assertTrue("Blur strength did not increase", newEdge > oldEdge)
+        assertTrue(!cover.isRecycled)
+    }
+
     @Test
     fun `compact backdrop keeps the surface size and renders a soft blur under the scrim`() {
         val stripes = createBitmap(192, 192).apply {

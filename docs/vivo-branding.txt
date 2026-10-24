@@ -48,9 +48,9 @@ assembleVivoRelease 成功，固定证书、非 debug、三个语言名称、署
 已实际查看新主体与专辑模糊背景的原子岛展开卡片，播放正常；未清数据或发布 Release。
 
 当前交付位置
-F:\Android\NeriPlayerReleases\NeriPlayer-smooth-progress.apk。
+项目内 .local/artifacts/NeriPlayer.apk。
 保留浅橙桌面图标、80% 主体及透明通知资源；每次正式签名构建覆盖同一交付文件。
 通知封面角标和状态栏由 OriginOS 主题重绘路径取图，其旧缓存未随覆盖安装正确清除。
 固件缓存写入键含下划线，包移除回调清理键却不含下划线；新包直接图标与默认主题
 重绘图标均已是白底。2026-10-24 经用户同意重启，两个实际显示位置都已变成白底。
-当前正式包版本 927fc6c9.10241233-vivo / versionCode214979600，固定签名覆盖安装。
+重启验收时包版本为 927fc6c9.10241233-vivo / versionCode214979600，固定签名覆盖安装。

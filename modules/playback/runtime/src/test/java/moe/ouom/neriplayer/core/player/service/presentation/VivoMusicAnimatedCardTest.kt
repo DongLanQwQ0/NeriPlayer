@@ -206,8 +206,11 @@ class VivoMusicAnimatedCardTest {
             PendingIntent::class.java, Boolean::class.javaPrimitiveType).apply { isAccessible = true }
             .invoke(bridge, inputs, open, false) as RemoteViews
         val layout = xml.apply(context, null) as ViewGroup
-        layout.measure(View.MeasureSpec.makeMeasureSpec(360, View.MeasureSpec.EXACTLY),
+        val content = layout.findViewById<View>(R.id.vivo_music_card)
+        content.measure(View.MeasureSpec.makeMeasureSpec(360, View.MeasureSpec.EXACTLY),
             View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+        layout.measure(View.MeasureSpec.makeMeasureSpec(360, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(content.measuredHeight, View.MeasureSpec.EXACTLY))
         layout.layout(0, 0, 360, layout.measuredHeight)
         val bar = layout.findViewById<View>(R.id.vivo_music_progress)
         val bounds = Rect(0, 0, bar.width, bar.height)
