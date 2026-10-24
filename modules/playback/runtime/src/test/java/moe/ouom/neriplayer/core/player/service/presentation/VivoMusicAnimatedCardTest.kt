@@ -24,6 +24,9 @@ import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
+import org.robolectric.shadows.ShadowSystemClock
+import java.time.Duration
+import moe.ouom.neriplayer.data.identity.stableKey
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import org.robolectric.annotation.LooperMode
@@ -52,6 +55,69 @@ class VivoMusicAnimatedCardTest {
             val command = application.nextStartedService
             assertNull("Rendering sent a real player command: ${command?.action}", command)
         }
+        bridge.clear()
+    }
+
+    @Test fun `rapid seeks keep the existing document until the latest curve settles and reject old acknowledgements`() {
+        val bridge = VivoMusicIslandBridge(context)
+        bridge.javaClass.getDeclaredField("lastInputs").apply { isAccessible = true }.set(bridge, inputs)
+        val motion = bridge.javaClass.getDeclaredField("progressMotion").apply { isAccessible = true }
+            .get(bridge) as VivoMusicProgressMotion
+        motion.update(checkNotNull(inputs.song).stableKey(), inputs.durationMs, inputs.positionMs, false, SystemClock.elapsedRealtime())
+        val defer = bridge.javaClass.getDeclaredMethod("deferSeekPublication", PlaybackServiceNotificationRenderInputs::class.java)
+            .apply { isAccessible = true }
+        val resolve = bridge.javaClass.getDeclaredMethod("resolvePendingInputs", PlaybackServiceNotificationRenderInputs::class.java)
+            .apply { isAccessible = true }
+        bridge.previewControl(null, null, 48_000L)
+        assertEquals(true, defer.invoke(bridge, inputs.copy(positionMs = 48_000L)))
+        ShadowSystemClock.advanceBy(Duration.ofMillis(100))
+        bridge.previewControl(null, null, 12_000L)
+        // Even an early acknowledgement of the second seek must not release the first one.
+        assertEquals(12_000L, (resolve.invoke(bridge, inputs.copy(positionMs = 12_000L)) as PlaybackServiceNotificationRenderInputs).positionMs)
+        ShadowSystemClock.advanceBy(Duration.ofMillis(300))
+        assertEquals(true, defer.invoke(bridge, inputs.copy(positionMs = 48_000L)))
+        assertEquals(12_000L, (resolve.invoke(bridge, inputs.copy(positionMs = 48_000L)) as PlaybackServiceNotificationRenderInputs).positionMs)
+        ShadowSystemClock.advanceBy(Duration.ofMillis(100))
+        assertEquals(false, defer.invoke(bridge, inputs.copy(positionMs = 12_000L)))
+        assertEquals(0.2f, motion.frame(SystemClock.elapsedRealtime()).from, 0.001f)
+        bridge.clear()
+    }
+
+    @Test fun `remote host alpha blends the background after document reapply`() {
+        val bridge = VivoMusicIslandBridge(context)
+        val xml = bridge.javaClass.getDeclaredMethod("classicCard", PlaybackServiceNotificationRenderInputs::class.java,
+            PendingIntent::class.java, Boolean::class.javaPrimitiveType).apply { isAccessible = true }
+            .invoke(bridge, inputs, open, false) as RemoteViews
+        val renderer = VivoMusicAnimatedCard(context)
+        fun document(color: Int): RemoteViews {
+            val background = Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888).apply { eraseColor(color) }
+            return renderer.render(xml, inputs, background, false,
+                VivoMusicProgressMotion.Frame(0.1f, 0.1f, 0L, false), emptyMap(), emptyList())
+        }
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        val view = document(android.graphics.Color.RED).apply(activity, null)
+        view.measure(View.MeasureSpec.makeMeasureSpec(360, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+        val height = view.measuredHeight
+        activity.setContentView(view, ViewGroup.LayoutParams(360, height))
+        view.layout(0, 0, 360, height)
+        fun pixel(): Int {
+            val bitmap = Bitmap.createBitmap(360, height, Bitmap.Config.ARGB_8888)
+            view.draw(Canvas(bitmap))
+            return bitmap.getPixel(5, 5).also { bitmap.recycle() }
+        }
+        assertEquals(android.graphics.Color.RED, pixel())
+        document(android.graphics.Color.BLUE).reapply(activity, view)
+        val first = pixel()
+        Thread.sleep(120)
+        val middle = pixel()
+        Thread.sleep(300)
+        val after = pixel()
+        assertTrue("Background switched on its first frame", android.graphics.Color.red(first) > android.graphics.Color.blue(first))
+        assertTrue("Background had no blended intermediate frame", android.graphics.Color.red(middle) > 15 && android.graphics.Color.blue(middle) > 15)
+        assertEquals(android.graphics.Color.BLUE, after)
+        activity.finish()
+        renderer.clear()
         bridge.clear()
     }
 

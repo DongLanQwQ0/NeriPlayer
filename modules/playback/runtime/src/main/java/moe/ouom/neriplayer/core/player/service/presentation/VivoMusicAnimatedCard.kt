@@ -7,6 +7,7 @@ import android.graphics.Canvas
 import android.graphics.Rect
 import android.graphics.RectF
 import android.os.Build
+import android.os.SystemClock
 import android.view.View
 import android.widget.CheckBox
 import android.widget.RemoteViews
@@ -52,6 +53,7 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
     )
     private val surfaces = mutableMapOf<Boolean, Surface>()
     private val encodedImages = IdentityHashMap<Bitmap, ByteArray>()
+    private val backdropTransition = VivoMusicBackdropTransition()
     private val platform = object : RcPlatformServices by RcPlatformServices.None {
         override fun getImageWidth(image: Any) = (image as Bitmap).width
         override fun getImageHeight(image: Any) = (image as Bitmap).height
@@ -67,6 +69,7 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
     fun render(
         xml: RemoteViews,
         inputs: PlaybackServiceNotificationRenderInputs,
+        background: Bitmap,
         cameraSafe: Boolean,
         motion: VivoMusicProgressMotion.Frame,
         actions: Map<Int, PendingIntent>,
@@ -83,12 +86,19 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
         }
         val width = surface.bitmap.width
         val height = surface.bitmap.height
+        val backdrop = backdropTransition.update(background, SystemClock.elapsedRealtime())
+        val retained = java.util.Collections.newSetFromMap(IdentityHashMap<Bitmap, Boolean>()).apply {
+            surfaces.values.forEach { add(it.bitmap); addAll(it.icons.values.flatten()) }
+            add(backdrop.from); add(backdrop.to)
+        }
+        encodedImages.keys.retainAll(retained)
         val writer = RemoteComposeWriter(width, height, "NeriPlayer music", 6, 0, platform)
         writer.setRootContentBehavior(RootContentBehavior.NONE, RootContentBehavior.ALIGNMENT_CENTER,
             RootContentBehavior.SIZING_SCALE, RootContentBehavior.SCALE_FILL_WIDTH)
         val now = Calendar.getInstance()
         val anchor = now.get(Calendar.MINUTE) * 60f + now.get(Calendar.SECOND) + now.get(Calendar.MILLISECOND) / 1000f
         val startedAt = writer.addFloatConstant(anchor)
+        val documentStartedAt = writer.addFloatConstant(anchor)
         val from = writer.addFloatConstant(motion.from)
         val target = writer.addFloatConstant(motion.target)
         val seconds = writer.addFloatConstant((motion.remainingMs / 1000f).coerceAtLeast(0.001f))
@@ -101,6 +111,10 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
         writer.startCanvas(RecordingModifier().size(width, height))
         // Expressions must belong to a painted canvas so host click actions can evaluate them.
         val clock = writer.floatExpression(RemoteComposeWriter.TIME_IN_CONTINUOUS_SEC)
+        val backgroundElapsed = writer.floatExpression(clock, documentStartedAt, SUB,
+            5400f, ADD, 3600f, MOD, 1800f, SUB, 0f, MAX)
+        val backgroundAlpha = writer.floatExpression(backgroundElapsed,
+            VivoMusicBackdropTransition.DURATION_MS / 1000f, DIV, backdrop.alpha, ADD, 1f, MIN)
         // The host clock wraps once per hour. Seek and playback must continue across that boundary.
         val elapsed = writer.floatExpression(clock, startedAt, SUB, 5400f, ADD, 3600f, MOD, 1800f, SUB, 0f, MAX)
         val t = writer.floatExpression(elapsed, seconds, DIV, 0f, MAX, 1f, MIN)
@@ -160,6 +174,13 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
         writer.endColumn()
         // Paint above hit regions so Android's default click ripple cannot flash across the card.
         writer.startCanvas(RecordingModifier().size(width, height))
+        writer.rcPaint.setAlpha(1f).commit()
+        writer.drawBitmap(backdrop.from, 0f, 0f, width.toFloat(), height.toFloat(), null)
+        if (backdrop.from !== backdrop.to) {
+            writer.rcPaint.setAlpha(backgroundAlpha).commit()
+            writer.drawBitmap(backdrop.to, 0f, 0f, width.toFloat(), height.toFloat(), null)
+            writer.rcPaint.setAlpha(1f).commit()
+        }
         writer.drawBitmap(surface.bitmap, 0f, 0f, width.toFloat(), height.toFloat(),
             "${inputs.song?.name.orEmpty()}, ${inputs.lyricLine ?: inputs.text}")
         surface.icons.forEach { (id, icons) ->
@@ -198,6 +219,9 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
 
     private fun createSurface(xml: RemoteViews, key: PlaybackServiceNotificationRenderInputs): Surface {
         val root = xml.apply(context, null)
+        // Artwork transitions are independent of text, controls and progress.
+        root.background = null
+        root.findViewById<View>(R.id.vivo_music_backdrop).visibility = View.INVISIBLE
         val width = (360 * context.resources.displayMetrics.density).roundToInt()
         root.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
             View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
@@ -232,7 +256,7 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
         return Surface(key, bitmap, bounds, icons, baseline, elapsed.textSize, context.resources.configuration.hashCode(), descriptions)
     }
 
-    fun clear() { surfaces.clear(); encodedImages.clear() }
+    fun clear() { surfaces.clear(); encodedImages.clear(); backdropTransition.clear() }
 
     companion object {
         const val SEEK_ACTION_ID = 0x4e50fb00

@@ -73,6 +73,13 @@ internal class VivoMusicIslandBridge(private val context: Context) {
     )
     private var pendingControls: PendingControls? = null
     private val handler = Handler(Looper.getMainLooper())
+    private var seekPublicationUntilMs = 0L
+    private var deferredInputs: PlaybackServiceNotificationRenderInputs? = null
+    private val resumePublication = Runnable {
+        val inputs = deferredInputs
+        deferredInputs = null
+        inputs?.let(::publish)
+    }
     private val rollback = Runnable {
         pendingControls = null
         lastInputs?.let(::publish)
@@ -84,8 +91,10 @@ internal class VivoMusicIslandBridge(private val context: Context) {
         if (positionMs != null) {
             val now = SystemClock.elapsedRealtime()
             val playingNow = inputs.playbackControlPlaying && !inputs.audioRouteMuted
-            progressMotion.update(songKey, inputs.durationMs, inputs.positionMs, playingNow, now)
             progressMotion.update(songKey, inputs.durationMs, positionMs, playingNow, now, seek = true)
+            // The host already retargeted its visible curve synchronously. Do not replace that
+            // document with the first seek's acknowledgement while a later seek is animating.
+            seekPublicationUntilMs = now + VivoMusicProgressMotion.SEEK_DURATION_MS
         }
         val previous = pendingControls?.takeIf { it.songKey == songKey }
         pendingControls = PendingControls(songKey, playing ?: previous?.playing,
@@ -106,7 +115,9 @@ internal class VivoMusicIslandBridge(private val context: Context) {
         val remaining = pending.copy(
             playing = pending.playing?.takeUnless { it == inputs.playbackControlPlaying && !inputs.audioRouteMuted },
             favorite = pending.favorite?.takeUnless { it == inputs.favorite },
-            positionMs = pending.positionMs?.takeUnless { kotlin.math.abs(it - inputs.positionMs) < 1_000L },
+            positionMs = pending.positionMs?.takeUnless {
+                SystemClock.elapsedRealtime() >= seekPublicationUntilMs && kotlin.math.abs(it - inputs.positionMs) < 1_000L
+            },
         )
         pendingControls = remaining.takeUnless { it.playing == null && it.favorite == null && it.positionMs == null }
         if (pendingControls == null) handler.removeCallbacks(rollback)
@@ -133,6 +144,7 @@ internal class VivoMusicIslandBridge(private val context: Context) {
             clear()
             return
         }
+        if (VivoMusicAnimatedCard.supported() && deferSeekPublication(inputs)) return
         manager.createNotificationChannel(NotificationChannel(
             CHANNEL, context.getString(R.string.vivo_music_island), NotificationManager.IMPORTANCE_LOW,
         ))
@@ -147,6 +159,25 @@ internal class VivoMusicIslandBridge(private val context: Context) {
             lastInputs = inputs
             lastProgressUpdateMs = SystemClock.elapsedRealtime()
         }.onFailure { NPLogger.w("NERI-VivoIsland", "Music island publication failed", it) }
+    }
+
+    private fun deferSeekPublication(inputs: PlaybackServiceNotificationRenderInputs): Boolean {
+        if (inputs.song?.stableKey() != lastInputs?.song?.stableKey()) {
+            seekPublicationUntilMs = 0L
+            deferredInputs = null
+            handler.removeCallbacks(resumePublication)
+            return false
+        }
+        val delay = seekPublicationUntilMs - SystemClock.elapsedRealtime()
+        if (delay <= 0L) {
+            deferredInputs = null
+            handler.removeCallbacks(resumePublication)
+            return false
+        }
+        deferredInputs = inputs
+        handler.removeCallbacks(resumePublication)
+        handler.postDelayed(resumePublication, delay)
+        return true
     }
 
     private fun available(): Boolean {
@@ -241,7 +272,7 @@ internal class VivoMusicIslandBridge(private val context: Context) {
             R.id.vivo_music_favorite to if (inputs.interactiveFavorite) open else
                 drawingControl(AudioPlayerService.ACTION_TOGGLE_FAV, songKey, 11),
         )
-        return animatedCard.render(xml, inputs, cameraSafe,
+        return animatedCard.render(xml, inputs, checkNotNull(cardArtwork.background), cameraSafe,
             progressMotion.frame(SystemClock.elapsedRealtime()), actions, seekIntents)
     }
 
@@ -363,6 +394,9 @@ internal class VivoMusicIslandBridge(private val context: Context) {
         checkedIntents.clear()
         drawingControls.clear()
         progressMotion.clear()
+        seekPublicationUntilMs = 0L
+        deferredInputs = null
+        handler.removeCallbacks(resumePublication)
         if (Build.VERSION.SDK_INT >= 35) animatedCard.clear()
         handler.removeCallbacks(rollback)
     }
