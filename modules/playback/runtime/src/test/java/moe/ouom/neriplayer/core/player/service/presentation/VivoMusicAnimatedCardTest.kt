@@ -162,7 +162,7 @@ class VivoMusicAnimatedCardTest {
         fun pixel(): Int {
             val bitmap = Bitmap.createBitmap(360, height, Bitmap.Config.ARGB_8888)
             view.draw(Canvas(bitmap))
-            return bitmap.getPixel(5, 5).also { bitmap.recycle() }
+            return bitmap.getPixel(5, 40).also { bitmap.recycle() }
         }
         fun assertColor(expected: Int, actual: Int) {
             assertEquals(255, android.graphics.Color.alpha(actual))
