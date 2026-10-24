@@ -44,7 +44,8 @@ import moe.ouom.neriplayer.core.player.service.notification.notificationSeekPosi
 @RequiresApi(35)
 @Suppress("RestrictedApi")
 internal class VivoMusicAnimatedCard(private val context: Context) {
-    fun prepareBackground(background: Bitmap) = backdropTransition.update(background, SystemClock.elapsedRealtime())
+    fun prepareBackground(background: Bitmap, cameraSafe: Boolean = false, now: Long = SystemClock.elapsedRealtime()) =
+        backdropTransitions.getOrPut(cameraSafe) { VivoMusicBackdropTransition() }.update(background, now)
     private data class Surface(
         val key: PlaybackServiceNotificationRenderInputs,
         val bitmap: Bitmap,
@@ -57,7 +58,8 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
     )
     private val surfaces = mutableMapOf<Boolean, Surface>()
     private val encodedImages = IdentityHashMap<Bitmap, ByteArray>()
-    private val backdropTransition = VivoMusicBackdropTransition()
+    private val backdropTransitions = mutableMapOf<Boolean, VivoMusicBackdropTransition>()
+    private val backdropFrames = mutableMapOf<Boolean, VivoMusicBackdropTransition.Frame>()
     private val platform = object : RcPlatformServices by RcPlatformServices.None {
         override fun getImageWidth(image: Any) = (image as Bitmap).width
         override fun getImageHeight(image: Any) = (image as Bitmap).height
@@ -76,7 +78,7 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
     fun render(
         xml: RemoteViews,
         inputs: PlaybackServiceNotificationRenderInputs,
-        backdrop: VivoMusicBackdropTransition.Frame,
+        background: (Int, Int) -> VivoMusicBackdropTransition.Frame,
         cameraSafe: Boolean,
         motion: VivoMusicProgressMotion.Frame,
         actions: Map<Int, PendingIntent>,
@@ -93,9 +95,11 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
         }
         val width = surface.bitmap.width
         val height = surface.bitmap.height
+        val backdrop = background(width, height)
+        backdropFrames[cameraSafe] = backdrop
         val retained = java.util.Collections.newSetFromMap(IdentityHashMap<Bitmap, Boolean>()).apply {
             surfaces.values.forEach { add(it.bitmap); addAll(it.icons.values.flatten()) }
-            add(backdrop.from); add(backdrop.to)
+            backdropFrames.values.forEach { add(it.from); add(it.to) }
         }
         encodedImages.keys.retainAll(retained)
         val writer = RemoteComposeWriter(width, height, "NeriPlayer music", 6, 0, platform)
@@ -106,6 +110,10 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
         val startedAt = writer.addFloatConstant(anchor)
         val from = writer.addFloatConstant(motion.from)
         val target = writer.addFloatConstant(motion.target)
+        val frozen = writer.addFloatConstant(motion.from)
+        // Expression-change actions only copy registered expressions, not float constants.
+        val frozenValue = writer.floatExpression(frozen, 0f, ADD)
+        val running = writer.addFloatConstant(1f)
         val seconds = writer.addFloatConstant((motion.remainingMs / 1000f).coerceAtLeast(0.001f))
         val localChecked = surface.icons.keys.filterNot {
             it == R.id.vivo_music_favorite && inputs.interactiveFavorite
@@ -128,8 +136,9 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
         val t = writer.floatExpression(elapsed, seconds, DIV, 0f, MAX, 1f, MIN)
         val eased = writer.floatExpression(t, t, MUL, 3f, 2f, t, MUL, SUB, MUL)
         val speed = if (motion.playing && inputs.durationMs > 0L) 1000f / inputs.durationMs else 0f
-        val fraction = writer.floatExpression(target, from, SUB, eased, MUL, from, ADD,
+        val animatedFraction = writer.floatExpression(target, from, SUB, eased, MUL, from, ADD,
             elapsed, speed, MUL, ADD, 0f, MAX, 1f, MIN)
+        val fraction = writer.floatExpression(frozen, running, animatedFraction, frozen, SUB, MUL, ADD)
         val toggled = localChecked.mapValues { (_, checked) -> writer.floatExpression(1f, checked, SUB) }
         writer.endCanvas()
         fun hit(width: Float, height: Float, vararg onClick: Action, description: String? = null) {
@@ -154,10 +163,15 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
             hit(progress.left, row.height())
             seeks.forEachIndexed { step, _ ->
                 hit(progress.width() / seeks.size, row.height(),
-                    ValueFloatExpressionChange(Utils.idFromNan(from), Utils.idFromNan(fraction)),
+                    // Snapshot first, cancel the previous curve, then atomically initialize its replacement.
+                    // The snapshot is separate from `from`, avoiding mutation of a running curve's own input.
+                    ValueFloatExpressionChange(Utils.idFromNan(frozen), Utils.idFromNan(fraction)),
+                    ValueFloatChange(Utils.idFromNan(running), 0f),
+                    ValueFloatExpressionChange(Utils.idFromNan(from), Utils.idFromNan(frozenValue)),
                     ValueFloatExpressionChange(Utils.idFromNan(startedAt), Utils.idFromNan(clock)),
                     ValueFloatChange(Utils.idFromNan(seconds), VivoMusicProgressMotion.SEEK_DURATION_MS / 1000f),
                     ValueFloatChange(Utils.idFromNan(target), step.toFloat() / (seeks.size - 1)),
+                    ValueFloatChange(Utils.idFromNan(running), 1f),
                     HostAction(SEEK_ACTION_ID + step), description = context.getString(R.string.vivo_music_seek_to,
                         formatPlaybackWidgetTime(checkNotNull(notificationSeekPosition(inputs.durationMs, step)))))
             }
@@ -268,7 +282,7 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
         return Surface(key, bitmap, bounds, icons, baseline, elapsed.textSize, context.resources.configuration.hashCode(), descriptions)
     }
 
-    fun clear() { surfaces.clear(); encodedImages.clear(); backdropTransition.clear() }
+    fun clear() { surfaces.clear(); encodedImages.clear(); backdropTransitions.clear(); backdropFrames.clear() }
 
     companion object {
         const val SEEK_ACTION_ID = 0x4e50fb00

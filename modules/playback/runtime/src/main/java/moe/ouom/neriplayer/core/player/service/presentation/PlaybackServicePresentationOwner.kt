@@ -276,7 +276,7 @@ internal class PlaybackServicePresentationOwner(
         val state = widgetState(playback, floatingLyricsEnabled)
         if (!shouldUpdateServicePlaybackWidget(force, lastWidgetState, state)) return
         lastWidgetState = state
-        port.publishWidget(state, artwork.snapshotFor(playback.song).mediaBitmap)
+        port.publishWidget(state, artwork.widgetArtwork())
     }
 
     fun updateWidgetProgress(floatingLyricsEnabled: Boolean) {

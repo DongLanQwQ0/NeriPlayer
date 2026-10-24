@@ -49,6 +49,8 @@ class VivoMusicIslandPreview(context: Context) : AppCompatImageView(context) {
         // Background bitmap resolution must not determine the displayed card height.
         content.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
             View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+        card.findViewById<ImageView>(R.id.vivo_music_backdrop)
+            .setImageBitmap(artworkRenderer.backgroundFor(width, content.measuredHeight))
         card.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
             View.MeasureSpec.makeMeasureSpec(content.measuredHeight, View.MeasureSpec.EXACTLY))
         card.layout(0, 0, width, card.measuredHeight)

@@ -31,7 +31,7 @@ import org.mockito.Mockito.mockingDetails
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(AndroidJUnit4::class)
 class PlaybackServicePresentationOwnerTest {
-    @Test fun `widget receives full media artwork instead of the notification thumbnail`() = runTest {
+    @Test fun `widget receives retained high resolution artwork instead of bounded metadata artwork`() = runTest {
         val current = song()
         val port = mock(PlaybackServicePresentationPort::class.java)
         val artwork = mock(PlaybackArtworkOwner::class.java)
@@ -42,9 +42,11 @@ class PlaybackServicePresentationOwnerTest {
             ServiceWidgetLabels("NeriPlayer", "Idle", "Buffering", "Playing", "Paused", "Ready"))
         `when`(artwork.snapshotFor(current)).thenReturn(
             PlaybackArtworkSnapshot("cover", full, thumbnail, true, true, false))
+        val retained = mock(android.graphics.Bitmap::class.java)
+        `when`(artwork.widgetArtwork()).thenReturn(retained)
         owner(FakeSource(playback(current)), backgroundScope, port, artwork).updateWidget(true, false)
         val widget = mockingDetails(port).invocations.single { it.method.name == "publishWidget" }
-        org.junit.Assert.assertSame(full, widget.arguments[1])
+        org.junit.Assert.assertSame(retained, widget.arguments[1])
     }
 
     @Test fun `notification backdrop receives existing media artwork without enlarging its cover payload`() = runTest {

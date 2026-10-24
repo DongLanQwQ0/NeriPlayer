@@ -33,20 +33,20 @@ import kotlin.math.roundToInt
 class PlaybackWidgetResolutionTest {
     @Test fun `full resolution cover persists for launcher refreshes without the player`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val cover = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.RED) }
+        val cover = Bitmap.createBitmap(1536, 1536, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.RED) }
         val state = PlaybackWidgetState.idle(context).copy(hasSong = true, artworkReady = true)
         PlaybackWidgetUpdater.updateFromPlaybackService(context, state, cover)
         val stored = BitmapFactory.decodeFile(File(context.filesDir, "playback_widget_artwork.png").absolutePath)
         assertNotNull(stored)
-        assertEquals(512 to 512, stored.width to stored.height)
+        assertEquals(1536 to 1536, stored.width to stored.height)
         assertEquals(Color.RED, stored.getPixel(256, 256))
     }
 
     @Test fun `large compact widget keeps native shape controls and a screen density backdrop after parceling`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val cover = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888).apply {
+        val cover = Bitmap.createBitmap(1536, 1536, Bitmap.Config.ARGB_8888).apply {
             Canvas(this).drawPaint(Paint().apply {
-                shader = LinearGradient(0f, 0f, 512f, 512f,
+                shader = LinearGradient(0f, 0f, 1536f, 1536f,
                     intArrayOf(0xFFB75968.toInt(), 0xFF653E23.toInt(), 0xFF1D3222.toInt()),
                     null, Shader.TileMode.CLAMP)
             })

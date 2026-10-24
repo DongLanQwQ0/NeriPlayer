@@ -35,11 +35,15 @@ internal object AppPlayerPresentation : PlayerPresentationHost {
 
     override fun hasInstalledWidgets(context: Context): Boolean = PlaybackWidgetUpdater.hasInstalledWidgets(context)
     override fun publishWidget(context: Context, state: PlaybackWidgetState, artwork: Bitmap?) {
-        PlaybackWidgetUpdater.updateFromPlaybackService(context, state, artwork)
+        PlaybackWidgetUpdater.renderInBackground {
+            PlaybackWidgetUpdater.updateFromPlaybackService(context, state, artwork)
+        }
     }
 
     override fun publishWidgetProgress(context: Context, state: PlaybackWidgetState) {
-        PlaybackWidgetUpdater.updatePlaybackProgressFromPlaybackService(context, state)
+        PlaybackWidgetUpdater.renderInBackground {
+            PlaybackWidgetUpdater.updatePlaybackProgressFromPlaybackService(context, state)
+        }
     }
 
     override suspend fun loadArtwork(context: Context, source: String, sizePx: Int): Bitmap? {
@@ -49,7 +53,7 @@ internal object AppPlayerPresentation : PlayerPresentationHost {
             sizePx = sizePx,
             allowHardware = false,
             offlineMode = context.isOfflineModeNow(),
-        )
+        ).newBuilder().bitmapConfig(Bitmap.Config.ARGB_8888).build()
         val drawable = Coil.imageLoader(context).execute(request).drawable ?: return null
         return copyDrawable(drawable)
     }

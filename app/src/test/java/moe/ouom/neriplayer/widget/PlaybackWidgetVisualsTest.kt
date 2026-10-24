@@ -46,7 +46,7 @@ class PlaybackWidgetVisualsTest {
         assertEquals(16 to 16, blur.width to blur.height)
     }
 
-    @Test fun `compact blur uses twelve working pixels instead of magnifying the legacy radius`() {
+    @Test fun `three reduced box radii preserve the 24px reference strength with a smooth kernel`() {
         val cover = createBitmap(512, 512).apply {
             for (y in 0 until height) for (x in 0 until width) {
                 this[x, y] = if (x < 256) Color.WHITE else Color.BLACK
@@ -56,17 +56,21 @@ class PlaybackWidgetVisualsTest {
         assertEquals(512 to 512, actual.width to actual.height)
         val pixels = IntArray(512 * 512)
         cover.getPixels(pixels, 0, 512, 0, 0, 512, 512)
-        fun blurred(radius: Int): IntArray {
-            val horizontal = artworkBoxBlurPass(pixels, 512, 512, radius, horizontal = true)
-            return artworkBoxBlurPass(horizontal, 512, 512, radius, horizontal = false)
+        fun blurred(radii: List<Int>): IntArray {
+            var result = pixels
+            for (radius in radii) {
+                val horizontal = artworkBoxBlurPass(result, 512, 512, radius, horizontal = true)
+                result = artworkBoxBlurPass(horizontal, 512, 512, radius, horizontal = false)
+            }
+            return result
         }
-        val expected = blurred(12)
-        // The former 40px reference would expand radius 3 to radius 44 at this resolution.
-        val previous = blurred(44)
+        assertEquals(listOf(13, 14, 14), playbackWidgetBlurRadii(24, 512).toList())
+        assertEquals(listOf(27, 28, 28), playbackWidgetBlurRadii(24, 1024).toList())
+        val expected = blurred(listOf(13, 14, 14))
         for (x in 0 until 512) assertEquals(expected[256 * 512 + x], actual[x, 256])
-        val newEdge = (0 until 512).count { Color.red(actual[it, 256]) in 10..245 }
-        val oldEdge = (0 until 512).count { Color.red(previous[256 * 512 + it]) in 10..245 }
-        assertTrue("Legacy blur still hides the artwork detail", newEdge < oldEdge)
+        val edgeSlope = Color.red(actual[228, 256]) - Color.red(actual[229, 256])
+        val centerSlope = Color.red(actual[255, 256]) - Color.red(actual[256, 256])
+        assertTrue("Kernel retained a flat box profile", centerSlope > edgeSlope)
         assertTrue(!cover.isRecycled)
     }
 
@@ -96,9 +100,10 @@ class PlaybackWidgetVisualsTest {
         for (x in 40 until plain.width - 41) {
             maxNeighborDelta = maxOf(maxNeighborDelta, abs(Color.red(plain[x, row]) - Color.red(plain[x + 1, row])))
         }
-        // A 25-tap kernel can change by at most 255/25 per source pixel; bilinear scaling
+        // The widest pass bounds the slope; subsequent averaging cannot increase that bound.
         // spreads that step over the output pixels, with one level allowed for rounding.
-        val maxFilteredStep = ceil(255f / 25f / (plain.width.toFloat() / stripes.width)).toInt() + 1
+        val widestKernel = 2 * playbackWidgetBlurRadii(24, stripes.width).max() + 1
+        val maxFilteredStep = ceil(255f / widestKernel / (plain.width.toFloat() / stripes.width)).toInt() + 1
         assertTrue("adjacent pixels jump by $maxNeighborDelta", maxNeighborDelta <= maxFilteredStep)
         assertTrue(Color.red(scrimmed[240, 240]) < Color.red(plain[240, 240]))
         assertEquals(0, Color.alpha(plain[0, 0]))
@@ -137,14 +142,14 @@ class PlaybackWidgetVisualsTest {
     }
 
     @Test
-    fun `artwork keeps a high resolution square and tints the palette`() {
+    fun `compact artwork retains the source aspect while regular artwork stays square and bounded`() {
         val wideRed = solidBitmap(800, 600, Color.rgb(200, 30, 30))
 
         val visuals = buildPlaybackWidgetVisuals(wideRed)
 
         val compact = visuals.compactArtwork
         assertNotNull(compact)
-        assertEquals(512 to 512, compact!!.width to compact.height)
+        assertEquals(800 to 600, compact!!.width to compact.height)
         assertEquals(512 to 512, visuals.artwork!!.width to visuals.artwork!!.height)
         assertEquals(255, Color.alpha(visuals.primaryControlColor))
         assertEquals(0, Color.alpha(visuals.artwork!![0, 0]))
@@ -160,6 +165,7 @@ class PlaybackWidgetVisualsTest {
         val backdrop = visuals.compactBackdrop(cover, size, 24f, 3.125f)
         assertEquals(813 to 588, backdrop.width to backdrop.height)
         repeat(20) { assertSame(backdrop, visuals.compactBackdrop(cover, size, 24f, 3.125f)) }
+        org.junit.Assert.assertNotSame(backdrop, visuals.compactBackdrop(cover, size, 24f, 3.125f, 1))
         assertTrue(!cover.isRecycled)
     }
 
@@ -181,10 +187,42 @@ class PlaybackWidgetVisualsTest {
             }
         }
         val visuals = buildPlaybackWidgetVisuals(cover)
-        val source = playbackWidgetBlurSource(visuals.compactArtwork!!, 1260, 720)
+        val source = playbackWidgetBlurSource(visuals.compactArtwork!!, 1260, 720, radiusPx = 2)
         assertEquals(512, source.width)
         assertTrue(Color.red(source[16, source.height / 2]) > 240)
         assertTrue(Color.red(source[48, source.height / 2]) < 15)
+    }
+
+    @Test fun `high resolution source fills the native working surface without a 512px bottleneck`() {
+        val visuals = buildPlaybackWidgetVisuals(solidBitmap(1800, 1800, Color.BLUE))
+        assertEquals(1536 to 1536, visuals.compactArtwork!!.width to visuals.compactArtwork!!.height)
+        assertEquals(512 to 512, visuals.artwork!!.width to visuals.artwork!!.height)
+        val source = playbackWidgetBlurSource(visuals.compactArtwork!!, 1260, 720)
+        assertEquals(1260 to 720, source.width to source.height)
+    }
+
+    @Test fun `zero radius is clear and very small radii remain useful and monotonic`() {
+        val source = createBitmap(512, 8).apply {
+            for (y in 0 until height) for (x in 0 until width) this[x, y] = if (x < 256) Color.WHITE else Color.BLACK
+        }
+        var previousWidth = -1
+        for (radius in 0..24) {
+            val blurred = playbackWidgetBlurSource(source, 512, 8, radius)
+            if (radius == 0) for (x in 0 until 512) assertEquals(source[x, 4], blurred[x, 4])
+            val edge = (0 until 512).count { Color.red(blurred[it, 4]) in 10..245 }
+            assertTrue("Blur contracted at radius $radius", edge >= previousWidth)
+            if (radius == 1) assertTrue("Weak blur disappeared through rounding", edge > 0)
+            previousWidth = edge
+        }
+    }
+
+    @Test fun `published builds ignore any locally tuned radius`() {
+        for (stored in listOf(-5, 0, 1, 12, 48, 100)) {
+            assertEquals(24, playbackWidgetTuningRadius(false, stored))
+        }
+        assertEquals(0, playbackWidgetTuningRadius(true, -5))
+        assertEquals(1, playbackWidgetTuningRadius(true, 1))
+        assertEquals(48, playbackWidgetTuningRadius(true, 100))
     }
 
     @Test

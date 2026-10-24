@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.player.service.presentation
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.RectF
 
 /** Retains the visible blend when artwork changes again before its fade has finished. */
 internal class VivoMusicBackdropTransition {
@@ -20,8 +21,15 @@ internal class VivoMusicBackdropTransition {
                     Bitmap.createBitmap(frame.to.width, frame.to.height, Bitmap.Config.ARGB_8888).also { blend ->
                         blend.setHasAlpha(false)
                         Canvas(blend).apply {
-                            drawBitmap(frame.from, 0f, 0f, null)
-                            drawBitmap(frame.to, 0f, 0f, Paint().apply { alpha = (frame.alpha * 255).toInt() })
+                            fun drawCropped(source: Bitmap, paint: Paint) {
+                                val scale = maxOf(width.toFloat() / source.width, height.toFloat() / source.height)
+                                val left = (width - source.width * scale) / 2f
+                                val top = (height - source.height * scale) / 2f
+                                drawBitmap(source, null,
+                                    RectF(left, top, left + source.width * scale, top + source.height * scale), paint)
+                            }
+                            drawCropped(frame.from, Paint(Paint.FILTER_BITMAP_FLAG))
+                            drawCropped(frame.to, Paint(Paint.FILTER_BITMAP_FLAG).apply { alpha = (frame.alpha * 255).toInt() })
                         }
                     }
                 }

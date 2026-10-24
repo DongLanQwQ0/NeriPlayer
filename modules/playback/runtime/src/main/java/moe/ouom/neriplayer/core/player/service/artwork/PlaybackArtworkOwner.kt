@@ -15,6 +15,7 @@ import moe.ouom.neriplayer.data.identity.playbackVisualKey
 import kotlin.time.Duration.Companion.milliseconds
 
 private const val NOTIFICATION_ARTWORK_SIZE_PX = 256
+private const val MEDIA_ARTWORK_SIZE_PX = 512
 private const val MEDIA_ARTWORK_MAX_RETRY_ATTEMPTS = 2
 
 internal enum class PlaybackArtworkChange {
@@ -44,6 +45,7 @@ internal class PlaybackArtworkOwner(
     private var currentCoverSongKey: String? = null
     private var currentCoverSource: String? = null
     private var currentMediaArtwork: Bitmap? = null
+    private var currentWidgetArtwork: Bitmap? = null
     private var currentMediaArtworkOwnerSongKey: String? = null
     private var currentMediaArtworkSource: String? = null
     private var currentNotificationLargeIcon: Bitmap? = null
@@ -120,6 +122,8 @@ internal class PlaybackArtworkOwner(
 
     fun snapshotFor(song: SongItem?): PlaybackArtworkSnapshot = snapshot(song?.playbackVisualKey())
 
+    fun widgetArtwork(): Bitmap? = currentWidgetArtwork
+
     fun close() {
         activeSong = null
         cancelPendingWork()
@@ -157,6 +161,7 @@ internal class PlaybackArtworkOwner(
         coverResolutionJob = null
         coverResolutionInFlightSongKey = null
         currentMediaArtwork = null
+        currentWidgetArtwork = null
         currentMediaArtworkOwnerSongKey = null
         currentMediaArtworkSource = null
         currentNotificationLargeIcon = null
@@ -327,7 +332,8 @@ internal class PlaybackArtworkOwner(
                     return@launch
                 }
                 val icon = withContext(ioDispatcher) { bitmap.scaledToMaxDimension(NOTIFICATION_ARTWORK_SIZE_PX) }
-                commitBitmap(source, songKey, generation, bitmap, icon)
+                val media = withContext(ioDispatcher) { bitmap.scaledToMaxDimension(MEDIA_ARTWORK_SIZE_PX) }
+                commitBitmap(source, songKey, generation, bitmap, media, icon)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -350,7 +356,7 @@ internal class PlaybackArtworkOwner(
     }
 
     private fun commitBitmap(
-        source: String, songKey: String?, generation: Long, bitmap: Bitmap, icon: Bitmap,
+        source: String, songKey: String?, generation: Long, bitmap: Bitmap, media: Bitmap, icon: Bitmap,
     ) {
         if (!acceptsLoad(source, songKey, generation)) return
         clearInFlightLoad()
@@ -359,7 +365,8 @@ internal class PlaybackArtworkOwner(
         artworkRetryJob?.cancel()
         artworkRetryJob = null
         artworkRetryAttemptCount = 0
-        currentMediaArtwork = bitmap
+        currentWidgetArtwork = bitmap
+        currentMediaArtwork = media
         currentMediaArtworkOwnerSongKey = songKey
         currentMediaArtworkSource = source
         currentNotificationLargeIcon = icon

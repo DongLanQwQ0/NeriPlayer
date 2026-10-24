@@ -43,6 +43,7 @@ import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsSlider
 import moe.ouom.neriplayer.ui.screen.tab.settings.miuix.MiuixSettingsTextButton
 import kotlin.math.roundToInt
+import moe.ouom.neriplayer.BuildConfig
 
 // OriginOS rounds the displayed card more than the inner XML background does.
 internal val VivoMusicIslandPreviewShape = RoundedCornerShape(20.dp)
@@ -60,7 +61,9 @@ internal fun VivoMusicIslandSettings(repository: SettingsRepository) {
     val artwork by produceState<Bitmap?>(null, coverSource) {
         value = null
         if (!coverSource.isNullOrBlank()) {
-            val request = ImageRequest.Builder(context).data(coverSource).size(512).allowHardware(false).build()
+            val request = ImageRequest.Builder(context).data(coverSource)
+                .size(if (BuildConfig.WIDGET_BLUR_TUNING) 1536 else 512).allowHardware(false)
+                .bitmapConfig(Bitmap.Config.ARGB_8888).build()
             value = Coil.imageLoader(context).execute(request).drawable?.toBitmap()
         }
     }
@@ -72,6 +75,7 @@ internal fun VivoMusicIslandSettings(repository: SettingsRepository) {
     VivoMusicIslandAppearanceControls(draft, song, artwork,
         onChange = { dragging = true; draft = it }, onFinished = ::save,
         onReset = { draft = VivoMusicIslandAppearance(); save() })
+    if (BuildConfig.WIDGET_BLUR_TUNING) PlaybackWidgetBlurTuningControls(artwork)
 }
 
 @Composable

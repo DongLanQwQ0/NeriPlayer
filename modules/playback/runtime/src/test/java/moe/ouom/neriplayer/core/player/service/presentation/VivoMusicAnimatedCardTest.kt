@@ -57,7 +57,7 @@ class VivoMusicAnimatedCardTest {
         bridge.javaClass.getDeclaredField("appearance").apply { isAccessible = true }.set(bridge,
             moe.ouom.neriplayer.data.model.settings.appearance.VivoMusicIslandAppearance(0, 0))
         val card = bridge.javaClass.getDeclaredMethod("card", PlaybackServiceNotificationRenderInputs::class.java,
-            PendingIntent::class.java, Boolean::class.javaPrimitiveType, VivoMusicBackdropTransition.Frame::class.java)
+            PendingIntent::class.java, Boolean::class.javaPrimitiveType, Long::class.javaPrimitiveType)
             .apply { isAccessible = true }
         fun artwork(seed: Int): Bitmap {
             val random = kotlin.random.Random(seed)
@@ -69,7 +69,7 @@ class VivoMusicAnimatedCardTest {
         val thumbnails = IdentityHashMap<Bitmap, Bitmap>()
         fun document(art: Bitmap, cameraSafe: Boolean) = card.invoke(bridge,
             inputs.copy(artwork = thumbnails.getOrPut(art) { Bitmap.createScaledBitmap(art, 256, 256, true) },
-                backgroundArtwork = art), open, cameraSafe, null) as RemoteViews
+                backgroundArtwork = art), open, cameraSafe, SystemClock.elapsedRealtime()) as RemoteViews
         document(artwork(1), false)
         val next = artwork(2)
         val bundle = android.os.Bundle().apply {
@@ -104,9 +104,9 @@ class VivoMusicAnimatedCardTest {
         val application = shadowOf(context as Application)
         val bridge = VivoMusicIslandBridge(context)
         val card = bridge.javaClass.getDeclaredMethod("card", PlaybackServiceNotificationRenderInputs::class.java,
-            PendingIntent::class.java, Boolean::class.javaPrimitiveType, VivoMusicBackdropTransition.Frame::class.java).apply { isAccessible = true }
+            PendingIntent::class.java, Boolean::class.javaPrimitiveType, Long::class.javaPrimitiveType).apply { isAccessible = true }
         for (checked in listOf(false, true)) for (cameraSafe in listOf(false, true)) {
-            card.invoke(bridge, inputs.copy(playbackControlPlaying = checked, favorite = checked), open, cameraSafe, null)
+            card.invoke(bridge, inputs.copy(playbackControlPlaying = checked, favorite = checked), open, cameraSafe, SystemClock.elapsedRealtime())
             val command = application.nextStartedService
             assertNull("Rendering sent a real player command: ${command?.action}", command)
         }
@@ -149,7 +149,7 @@ class VivoMusicAnimatedCardTest {
                 setHasAlpha(false)
                 eraseColor(color)
             }
-            return renderer.render(xml, inputs, renderer.prepareBackground(background), false,
+            return renderer.render(xml, inputs, { _, _ -> renderer.prepareBackground(background) }, false,
                 VivoMusicProgressMotion.Frame(0.1f, 0.1f, 0L, false), emptyMap(), emptyList())
         }
         val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
@@ -200,8 +200,8 @@ class VivoMusicAnimatedCardTest {
         motion.update("song", 60_000L, 6_000L, false, SystemClock.elapsedRealtime())
         fun card(data: PlaybackServiceNotificationRenderInputs): RemoteViews = bridge.javaClass
             .getDeclaredMethod("card", PlaybackServiceNotificationRenderInputs::class.java,
-                PendingIntent::class.java, Boolean::class.javaPrimitiveType, VivoMusicBackdropTransition.Frame::class.java).apply { isAccessible = true }
-            .invoke(bridge, data, open, false, null) as RemoteViews
+                PendingIntent::class.java, Boolean::class.javaPrimitiveType, Long::class.javaPrimitiveType).apply { isAccessible = true }
+            .invoke(bridge, data, open, false, SystemClock.elapsedRealtime()) as RemoteViews
         val xml = bridge.javaClass.getDeclaredMethod("classicCard", PlaybackServiceNotificationRenderInputs::class.java,
             PendingIntent::class.java, Boolean::class.javaPrimitiveType).apply { isAccessible = true }
             .invoke(bridge, inputs, open, false) as RemoteViews
@@ -280,6 +280,20 @@ class VivoMusicAnimatedCardTest {
         assertTrue("Retarget did not retain its visible starting point",
             kotlin.math.abs(firstRetarget - beforeRetarget) < 15)
         assertTrue("Retarget had no intermediate frame", middleRetarget in (beforeRetarget + 2)..(afterRetarget - 2))
+        // Multiple clicks before any intervening paint must cancel the former curve rather
+        // than feed partially-mutated endpoints back into its next starting value.
+        val beforeBurst = width("burst-before")
+        tap(0.05f)
+        tap(0.9f)
+        tap(0.1f)
+        val burstFirst = width("burst-first")
+        Thread.sleep(120)
+        val burstMiddle = width("burst-middle")
+        Thread.sleep(400)
+        val burstAfter = width("burst-after")
+        assertTrue("Back-to-back clicks flashed before the next paint", kotlin.math.abs(burstFirst - beforeBurst) < 15)
+        assertTrue("Burst resumed a retired animation", burstMiddle in (burstAfter + 2)..(beforeBurst - 2))
+        assertTrue("Burst did not settle at its latest target", burstAfter < bounds.width() * 0.2)
         val renderer = (bridge.javaClass.getDeclaredField("animatedCard\$delegate").apply { isAccessible = true }
             .get(bridge) as Lazy<*>).value!!
         fun cachedBitmap(): Any = (renderer.javaClass.getDeclaredField("surfaces").apply { isAccessible = true }

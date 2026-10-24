@@ -11,7 +11,7 @@ import moe.ouom.neriplayer.data.local.media.isUsableCoverReference
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.local.media.displayCoverUrl
 
-private const val MEDIA_ARTWORK_SIZE_PX = 512
+private const val RETAINED_ARTWORK_SIZE_PX = 1536
 
 internal class DownloadedArtworkReference(val coverPath: String?, val coverUrl: String?)
 
@@ -69,7 +69,7 @@ internal class AndroidPlaybackCoverSources(private val context: Context) : Playb
 
 internal class CoilPlaybackArtworkBitmapLoader(private val context: Context) : PlaybackArtworkBitmapLoader {
     override suspend fun load(source: String): Bitmap? =
-        PlayerDependencies.presentation.loadArtwork(context, source, MEDIA_ARTWORK_SIZE_PX)
+        PlayerDependencies.presentation.loadArtwork(context, source, RETAINED_ARTWORK_SIZE_PX)
 }
 
 internal object AndroidPlaybackArtworkClock : PlaybackArtworkClock {

@@ -31,8 +31,15 @@ import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import java.io.File
 import java.io.FileOutputStream
 import kotlin.math.roundToInt
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 internal object PlaybackWidgetUpdater {
+    // Serialize cache ownership and keep blur, PNG persistence and Binder preparation off the UI thread.
+    private val renderingScope = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1))
+    fun renderInBackground(block: () -> Unit) = renderingScope.launch { block() }
     private const val PREFS_NAME = "neriplayer_playback_widget"
     private const val KEY_TITLE = "title"
     private const val KEY_SUBTITLE = "subtitle"
@@ -72,10 +79,12 @@ internal object PlaybackWidgetUpdater {
     fun refreshForConfigurationChange(context: Context) {
         if (!hasInstalledWidgets(context)) return
         if (AudioPlayerService.refreshPlaybackWidgetsFromActiveService("widget_configuration_changed")) return
-        val state = readState(context)
-        updateAllInstalledWidgets(
-            context, state, buildPlaybackWidgetVisuals(readCachedArtwork(context, state), isDarkTheme(context)),
-        )
+        renderInBackground {
+            val state = readState(context)
+            updateAllInstalledWidgets(
+                context, state, buildPlaybackWidgetVisuals(readCachedArtwork(context, state), isDarkTheme(context)),
+            )
+        }
     }
 
     fun updatePlaybackProgressFromPlaybackService(
@@ -347,7 +356,8 @@ internal object PlaybackWidgetUpdater {
             val cover = visuals.compactArtwork ?: requireNotNull(
                 AppCompatResources.getDrawable(context, R.drawable.ic_neriplayer_round),
             ).toBitmap(PLAYBACK_WIDGET_ARTWORK_MAX_DIMENSION_PX, PLAYBACK_WIDGET_ARTWORK_MAX_DIMENSION_PX)
-            visuals.compactBackdrop(cover, size, cornerRadiusDp, context.resources.displayMetrics.density)
+            visuals.compactBackdrop(cover, size, cornerRadiusDp, context.resources.displayMetrics.density,
+                PlaybackWidgetBlurTuning.radius(context))
         } else visuals.artwork
         if (albumArtwork != null) {
             views.setImageViewBitmap(R.id.widget_album_art, albumArtwork)

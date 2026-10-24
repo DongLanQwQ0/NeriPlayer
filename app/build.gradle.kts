@@ -94,6 +94,8 @@ android {
         buildConfigField("String", "BUILD_UUID", "\"${buildUUID}\"")
         buildConfigField("String", "TAG", "\"[NeriPlayer]\"")
         buildConfigField("long", "BUILD_TIMESTAMP", "${System.currentTimeMillis()}L")
+        // Local optimized tuning builds opt in; published releases omit the control and ignore its preference.
+        buildConfigField("boolean", "WIDGET_BLUR_TUNING", "false")
 
 
         testInstrumentationRunner = "moe.ouom.neriplayer.testing.NeriPlayerInstrumentationTestRunner"
@@ -107,6 +109,7 @@ android {
         val releaseSigningConfig = signingConfigs.getByName("release")
 
         debug {
+            buildConfigField("boolean", "WIDGET_BLUR_TUNING", "true")
             applicationIdSuffix = ".debug"
             val inviteScheme = "neriplayer-debug"
             manifestPlaceholders["listenTogetherInviteScheme"] = inviteScheme
@@ -137,6 +140,8 @@ android {
             applicationIdSuffix = ".vivo"
             isDebuggable = false
             isJniDebuggable = false
+            buildConfigField("boolean", "WIDGET_BLUR_TUNING",
+                providers.gradleProperty("widgetBlurTuning").orElse("false").get().toBoolean().toString())
             // The fork is signed separately, never with the upstream or debug identity.
             signingConfig = null
             matchingFallbacks += "release"

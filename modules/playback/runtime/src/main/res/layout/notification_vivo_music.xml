@@ -2,7 +2,7 @@
     android:layout_width="match_parent" android:layout_height="wrap_content"
     android:background="@drawable/vivo_music_background">
     <ImageView android:id="@+id/vivo_music_backdrop" android:layout_width="match_parent"
-        android:layout_height="match_parent" android:scaleType="fitXY" android:importantForAccessibility="no" />
+        android:layout_height="match_parent" android:scaleType="centerCrop" android:importantForAccessibility="no" />
     <LinearLayout android:id="@+id/vivo_music_card" android:layout_width="match_parent"
         android:layout_height="wrap_content" android:orientation="vertical" android:padding="16dp"
         android:clipChildren="false" android:clipToPadding="false">

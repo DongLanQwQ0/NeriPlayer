@@ -17,6 +17,7 @@ import androidx.core.graphics.createBitmap
 import androidx.core.graphics.get
 import moe.ouom.neriplayer.common.graphics.artworkBoxBlurPass
 import kotlin.math.roundToInt
+import kotlin.math.floor
 import kotlin.math.sqrt
 
 internal data class PlaybackWidgetVisuals(
@@ -29,15 +30,16 @@ internal data class PlaybackWidgetVisuals(
     val controlTint: Int = textPrimary,
     val primaryControlTint: Int = 0xFF142B20.toInt(),
 ) {
-    private data class BackdropKey(val size: PlaybackWidgetSize, val radius: Float, val scale: Float)
+    private data class BackdropKey(val size: PlaybackWidgetSize, val radius: Float, val scale: Float, val blur: Int)
     private val backdrops = object : LruCache<BackdropKey, Bitmap>(BACKDROP_CACHE_MAX_BYTES) {
         override fun sizeOf(key: BackdropKey, value: Bitmap) = value.byteCount
     }
 
-    fun compactBackdrop(cover: Bitmap, size: PlaybackWidgetSize, radius: Float, scale: Float): Bitmap {
-        val key = BackdropKey(size, radius, scale)
+    fun compactBackdrop(cover: Bitmap, size: PlaybackWidgetSize, radius: Float, scale: Float,
+        blurRadiusPx: Int = PLAYBACK_WIDGET_DEFAULT_BLUR_RADIUS_PX): Bitmap {
+        val key = BackdropKey(size, radius, scale, blurRadiusPx)
         return backdrops[key] ?: playbackWidgetBackdrop(cover, size, radius,
-            applyScrim = true, renderScale = scale).also { backdrops.put(key, it) }
+            applyScrim = true, renderScale = scale, blurRadiusPx = blurRadiusPx).also { backdrops.put(key, it) }
     }
 }
 
@@ -45,12 +47,16 @@ internal fun buildPlaybackWidgetVisuals(
     artwork: Bitmap?,
     isDarkTheme: Boolean = false,
 ): PlaybackWidgetVisuals {
-    val squareArtwork = artwork?.takeIf { it.width > 0 && it.height > 0 }?.toSquareBitmap()
+    val retainedArtwork = artwork?.takeIf { it.width > 0 && it.height > 0 }?.let {
+        val scale = minOf(1f, PLAYBACK_WIDGET_ARTWORK_MAX_DIMENSION_PX.toFloat() / maxOf(it.width, it.height))
+        scaledBitmap(it, Rect(0, 0, it.width, it.height),
+            (it.width * scale).roundToInt().coerceAtLeast(1), (it.height * scale).roundToInt().coerceAtLeast(1))
+    }
     val palette = playbackWidgetPalette(
-        seedColor = squareArtwork?.sampleThemeSeed() ?: Color.rgb(106, 163, 134),
+        seedColor = retainedArtwork?.sampleThemeSeed() ?: Color.rgb(106, 163, 134),
         isDarkTheme = isDarkTheme,
     )
-    if (squareArtwork == null) {
+    if (retainedArtwork == null) {
         return PlaybackWidgetVisuals(
             artwork = null,
             compactArtwork = null,
@@ -62,10 +68,11 @@ internal fun buildPlaybackWidgetVisuals(
             primaryControlTint = palette.primaryControlTint,
         )
     }
-    val roundedArtwork = squareArtwork.toRoundedArtworkBitmap()
+    // Regular widgets send a small cover over Binder; the compact backdrop retains the full source.
+    val roundedArtwork = retainedArtwork.toSquareBitmap(512).toRoundedArtworkBitmap()
     return PlaybackWidgetVisuals(
         artwork = roundedArtwork,
-        compactArtwork = squareArtwork,
+        compactArtwork = retainedArtwork,
         primaryControlColor = palette.primaryControlColor,
         backgroundColor = palette.backgroundColor,
         textPrimary = palette.textPrimary,
@@ -103,11 +110,13 @@ private fun playbackWidgetPalette(
     )
 }
 
-internal const val PLAYBACK_WIDGET_ARTWORK_MAX_DIMENSION_PX = 512
+internal const val PLAYBACK_WIDGET_ARTWORK_MAX_DIMENSION_PX = 1536
+internal const val PLAYBACK_WIDGET_DEFAULT_BLUR_RADIUS_PX = 24
 private const val SURFACE_MAX_DIMENSION_PX = 2048
 private const val SURFACE_MAX_PIXELS = 1024 * 1024
 private const val BACKDROP_BLUR_SOURCE_MAX_PX = PLAYBACK_WIDGET_ARTWORK_MAX_DIMENSION_PX
-private const val BACKDROP_BLUR_RADIUS_PX = 12
+private const val BACKDROP_BLUR_REFERENCE_PX = 512
+private const val BACKDROP_BLUR_PASSES = 3
 private const val BACKDROP_CACHE_MAX_BYTES = 8 * 1024 * 1024
 private const val MINI_SCRIM_START_COLOR = 0x99000000.toInt()
 private const val MINI_SCRIM_END_COLOR = 0xB3000000.toInt()
@@ -140,12 +149,13 @@ internal fun playbackWidgetBackdrop(
     cornerRadiusDp: Float,
     applyScrim: Boolean = false,
     renderScale: Float = 1f,
+    blurRadiusPx: Int = PLAYBACK_WIDGET_DEFAULT_BLUR_RADIUS_PX,
 ): Bitmap {
     // bitmap clipping also works on launchers where XML cannot clip the root view
     val output = playbackWidgetSurface(size, cornerRadiusDp, Color.WHITE, renderScale)
     val width = output.width
     val height = output.height
-    val blurSource = playbackWidgetBlurSource(artwork, width, height)
+    val blurSource = playbackWidgetBlurSource(artwork, width, height, blurRadiusPx)
     val target = RectF(0f, 0f, width.toFloat(), height.toFloat())
     val canvas = Canvas(output)
     val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
@@ -167,10 +177,12 @@ internal fun playbackWidgetBackdrop(
 }
 
 /**
- * 保留高清封面的采样像素，直接在工作图上做 12px 模糊，避免低清放大。
- * 逐级缩小抑制混叠，滑动窗口模糊保持线性开销。
+ * 按实际输出尺寸采样，三轮滑动窗口近似高斯；24px 以 512px 长边上的单轮盒式核为强度基准。
+ * 按方差分配每轮半径，避免提高工作图分辨率后模糊变弱，以及三轮直接叠加造成过强模糊。
  */
-internal fun playbackWidgetBlurSource(artwork: Bitmap, targetWidth: Int, targetHeight: Int): Bitmap {
+internal fun playbackWidgetBlurSource(artwork: Bitmap, targetWidth: Int, targetHeight: Int,
+    radiusPx: Int = PLAYBACK_WIDGET_DEFAULT_BLUR_RADIUS_PX): Bitmap {
+    require(radiusPx >= 0)
     val cropWidth = minOf(artwork.width, (artwork.height * targetWidth.toFloat() / targetHeight).roundToInt())
         .coerceAtLeast(1)
     val cropHeight = minOf(artwork.height, (artwork.width * targetHeight.toFloat() / targetWidth).roundToInt())
@@ -197,12 +209,27 @@ internal fun playbackWidgetBlurSource(artwork: Bitmap, targetWidth: Int, targetH
     }
     val blurSource = scaledBitmap(current, currentSource, blurWidth, blurHeight)
     if (current !== artwork) current.recycle()
+    if (radiusPx == 0) return blurSource
     val pixels = IntArray(blurWidth * blurHeight)
+    val scratch = IntArray(pixels.size)
     blurSource.getPixels(pixels, 0, blurWidth, 0, 0, blurWidth, blurHeight)
-    val horizontal = artworkBoxBlurPass(pixels, blurWidth, blurHeight, BACKDROP_BLUR_RADIUS_PX, horizontal = true)
-    val blurred = artworkBoxBlurPass(horizontal, blurWidth, blurHeight, BACKDROP_BLUR_RADIUS_PX, horizontal = false)
-    blurSource.setPixels(blurred, 0, blurWidth, 0, 0, blurWidth, blurHeight)
+    for (radius in playbackWidgetBlurRadii(radiusPx, maxOf(blurWidth, blurHeight))) {
+        if (radius == 0) continue
+        artworkBoxBlurPass(pixels, blurWidth, blurHeight, radius, horizontal = true, output = scratch)
+        artworkBoxBlurPass(scratch, blurWidth, blurHeight, radius, horizontal = false, output = pixels)
+    }
+    blurSource.setPixels(pixels, 0, blurWidth, 0, 0, blurWidth, blurHeight)
     return blurSource
+}
+
+/** Distribute the reference box variance between three integer-radius passes, including weak blur. */
+internal fun playbackWidgetBlurRadii(radiusPx: Int, workingLongSide: Int): IntArray {
+    val scale = workingLongSide.toFloat() / BACKDROP_BLUR_REFERENCE_PX
+    val varianceSum = radiusPx.toFloat() * (radiusPx + 1) * scale * scale
+    val low = floor((sqrt(1f + 4f * varianceSum / BACKDROP_BLUR_PASSES) - 1f) / 2f).toInt()
+    val highCount = ((varianceSum - BACKDROP_BLUR_PASSES * low * (low + 1)) / (2f * (low + 1)))
+        .roundToInt().coerceIn(0, BACKDROP_BLUR_PASSES)
+    return IntArray(BACKDROP_BLUR_PASSES) { if (it < BACKDROP_BLUR_PASSES - highCount) low else low + 1 }
 }
 
 private fun scaledBitmap(source: Bitmap, sourceRect: Rect, width: Int, height: Int): Bitmap {
@@ -216,11 +243,11 @@ private fun scaledBitmap(source: Bitmap, sourceRect: Rect, width: Int, height: I
     }
 }
 
-private fun Bitmap.toSquareBitmap(): Bitmap {
+private fun Bitmap.toSquareBitmap(maxDimension: Int = PLAYBACK_WIDGET_ARTWORK_MAX_DIMENSION_PX): Bitmap {
     val sourceSize = minOf(width, height)
     val left = (width - sourceSize) / 2
     val top = (height - sourceSize) / 2
-    val targetSize = sourceSize.coerceAtMost(PLAYBACK_WIDGET_ARTWORK_MAX_DIMENSION_PX)
+    val targetSize = sourceSize.coerceAtMost(maxDimension)
     return createBitmap(targetSize, targetSize).also { output ->
         Canvas(output).drawBitmap(
             this,

@@ -76,13 +76,18 @@ abstract class NeriPlayerBaseWidgetProvider(
         if (AudioPlayerService.refreshPlaybackWidgetsFromActiveService(reason)) {
             return
         }
-        PlaybackWidgetUpdater.updateStoredWidgets(
-            context = context,
-            appWidgetManager = appWidgetManager,
-            appWidgetIds = appWidgetIds,
-            layoutRes = layoutRes,
-            widgetOptions = widgetOptions,
-        )
+        val pending = goAsync()
+        PlaybackWidgetUpdater.renderInBackground {
+            try {
+                PlaybackWidgetUpdater.updateStoredWidgets(
+                    context = context,
+                    appWidgetManager = appWidgetManager,
+                    appWidgetIds = appWidgetIds,
+                    layoutRes = layoutRes,
+                    widgetOptions = widgetOptions,
+                )
+            } finally { pending?.finish() }
+        }
     }
 }
 

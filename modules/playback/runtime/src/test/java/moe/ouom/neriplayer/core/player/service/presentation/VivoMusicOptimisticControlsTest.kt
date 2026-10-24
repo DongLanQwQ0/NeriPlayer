@@ -87,4 +87,17 @@ class VivoMusicOptimisticControlsTest {
         assertEquals(next, resolve(bridge, next))
         bridge.clear()
     }
+
+    @Test fun `latest seek acknowledgement does not reopen the gate for a retired target`() {
+        val bridge = bridge()
+        bridge.previewControl(null, null, 48_000L)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(100))
+        bridge.previewControl(null, null, 12_000L)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(500))
+        assertEquals(12_000L, resolve(bridge, actual.copy(positionMs = 12_000L)).positionMs)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(50))
+        assertEquals("An old acknowledgement replaced the latest settled target", 12_000L,
+            resolve(bridge, actual.copy(positionMs = 48_000L)).positionMs)
+        bridge.clear()
+    }
 }

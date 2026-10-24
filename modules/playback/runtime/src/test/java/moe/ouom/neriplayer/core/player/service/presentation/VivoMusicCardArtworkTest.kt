@@ -222,10 +222,38 @@ class VivoMusicCardArtworkTest {
         val renderer = preview.javaClass.getDeclaredField("artworkRenderer").apply { isAccessible = true }
             .get(preview) as VivoMusicCardArtwork
         assertTrue(expected.sameAs(renderer.background!!))
+        val measuredBackground = renderer.backgroundFor(previewBitmap.width, previewBitmap.height)
+        assertEquals(previewBitmap.width.toFloat() / previewBitmap.height,
+            measuredBackground.width.toFloat() / measuredBackground.height, 0.01f)
         assertTrue(!preview.hasOnClickListeners())
         val output = File("build/reports/vivo-artwork/settings-preview.png")
         output.parentFile!!.mkdirs()
         val bitmap = (preview.drawable as android.graphics.drawable.BitmapDrawable).bitmap
         output.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    @Test fun `measured target crops a round object without stretching and retains wide source composition`() {
+        val source = Bitmap.createBitmap(1000, 400, Bitmap.Config.ARGB_8888)
+        Canvas(source).apply {
+            drawColor(Color.BLUE)
+            drawCircle(500f, 200f, 75f, Paint().apply { color = Color.WHITE })
+            drawRect(0f, 0f, 60f, 400f, Paint().apply { color = Color.RED })
+            drawRect(940f, 0f, 1000f, 400f, Paint().apply { color = Color.GREEN })
+        }
+        val renderer = renderer()
+        renderer.update(source, VivoMusicIslandAppearance(0, 0))
+        for ((width, height) in listOf(360 to 134, 360 to 145, 180 to 240)) {
+            val result = renderer.backgroundFor(width, height)
+            assertEquals(width.toFloat() / height, result.width.toFloat() / result.height, 0.02f)
+            val y = result.height / 2
+            val x = result.width / 2
+            val diameterX = (0 until result.width).count { Color.red(result.getPixel(it, y)) > 245 && Color.blue(result.getPixel(it, y)) > 245 }
+            val diameterY = (0 until result.height).count { Color.red(result.getPixel(x, it)) > 245 && Color.blue(result.getPixel(x, it)) > 245 }
+            assertTrue("Round album object was stretched: $diameterX x $diameterY", abs(diameterX - diameterY) <= 2)
+            assertSame(result, renderer.backgroundFor(width, height))
+        }
+        val wide = renderer.backgroundFor(360, 134)
+        assertEquals(Color.RED, wide.getPixel(5, wide.height / 2))
+        assertEquals(Color.GREEN, wide.getPixel(wide.width - 6, wide.height / 2))
     }
 }
