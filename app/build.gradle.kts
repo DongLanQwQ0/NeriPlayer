@@ -487,7 +487,7 @@ dependencies {
     androidTestImplementation(libs.kotlinx.coroutines.android)
     androidTestImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.room.testing)
-    // Isolated firmware capability probe; no RemoteCompose dependency in the application.
+    // Instrumentation exercises the same document format as the production music card.
     androidTestImplementation("androidx.compose.remote:remote-creation-core:1.0.0-alpha22")
     androidTestImplementation(testFixtures(project(":local")))
     implementation(libs.androidx.animation)

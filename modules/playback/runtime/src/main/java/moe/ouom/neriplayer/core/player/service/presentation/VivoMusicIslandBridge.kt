@@ -48,6 +48,9 @@ internal class VivoMusicIslandBridge(private val context: Context) {
     private var published = false
     private var capabilityFailureLogged = false
     private val cardArtwork = VivoMusicCardArtwork(context)
+    private val progressMotion = VivoMusicProgressMotion()
+    private val animatedCard by lazy { VivoMusicAnimatedCard(context) }
+    private val drawingControls = mutableMapOf<Pair<String, String>, PendingIntent>()
     private var lastInputs: PlaybackServiceNotificationRenderInputs? = null
     private var lastProgressUpdateMs = 0L
     private var seekIdentity: Pair<String, Long>? = null
@@ -78,6 +81,12 @@ internal class VivoMusicIslandBridge(private val context: Context) {
     fun previewControl(playing: Boolean?, favorite: Boolean?, positionMs: Long?) {
         val inputs = lastInputs ?: return
         val songKey = inputs.song?.stableKey() ?: return
+        if (positionMs != null) {
+            val now = SystemClock.elapsedRealtime()
+            val playingNow = inputs.playbackControlPlaying && !inputs.audioRouteMuted
+            progressMotion.update(songKey, inputs.durationMs, inputs.positionMs, playingNow, now)
+            progressMotion.update(songKey, inputs.durationMs, positionMs, playingNow, now, seek = true)
+        }
         val previous = pendingControls?.takeIf { it.songKey == songKey }
         pendingControls = PendingControls(songKey, playing ?: previous?.playing,
             favorite ?: previous?.favorite, positionMs ?: previous?.positionMs,
@@ -166,6 +175,8 @@ internal class VivoMusicIslandBridge(private val context: Context) {
         val song = checkNotNull(inputs.song)
         val title = song.displayName()
         val artist = song.displayArtist()
+        progressMotion.update(song.stableKey(), inputs.durationMs, inputs.positionMs,
+            inputs.playbackControlPlaying && !inputs.audioRouteMuted, SystemClock.elapsedRealtime())
         cardArtwork.update(inputs.artwork)
         val open = openIntent
         val icon = cardArtwork.cover?.let(Icon::createWithBitmap)
@@ -216,7 +227,26 @@ internal class VivoMusicIslandBridge(private val context: Context) {
     }
 
     @android.annotation.TargetApi(Build.VERSION_CODES.S)
-    private fun card(inputs: PlaybackServiceNotificationRenderInputs, open: PendingIntent, cameraSafe: Boolean) =
+    private fun card(inputs: PlaybackServiceNotificationRenderInputs, open: PendingIntent, cameraSafe: Boolean): RemoteViews {
+        val xml = classicCard(inputs, open, cameraSafe)
+        // Preserve the existing card on older hosts; the verified OriginOS 6 host draws format 6.
+        if (!VivoMusicAnimatedCard.supported()) return xml
+        val songKey = checkNotNull(inputs.song).stableKey()
+        val actions = linkedMapOf(
+            R.id.vivo_music_card to open,
+            R.id.vivo_music_app to open,
+            R.id.vivo_music_previous to control(AudioPlayerService.ACTION_PREV, 2),
+            R.id.vivo_music_next to control(AudioPlayerService.ACTION_NEXT, 3),
+            R.id.vivo_music_play to drawingControl(AudioPlayerService.ACTION_TOGGLE_PLAY_PAUSE, songKey, 10),
+            R.id.vivo_music_favorite to if (inputs.interactiveFavorite) open else
+                drawingControl(AudioPlayerService.ACTION_TOGGLE_FAV, songKey, 11),
+        )
+        return animatedCard.render(xml, inputs, cameraSafe,
+            progressMotion.frame(SystemClock.elapsedRealtime()), actions, seekIntents)
+    }
+
+    @android.annotation.TargetApi(Build.VERSION_CODES.S)
+    private fun classicCard(inputs: PlaybackServiceNotificationRenderInputs, open: PendingIntent, cameraSafe: Boolean) =
         RemoteViews(context.packageName, R.layout.notification_vivo_music).apply {
             val song = checkNotNull(inputs.song)
             val durationMs = inputs.durationMs.coerceAtLeast(0L)
@@ -272,6 +302,7 @@ internal class VivoMusicIslandBridge(private val context: Context) {
         if (identity == seekIdentity) return
         seekIdentity = identity
         checkedIntents.clear()
+        drawingControls.clear()
         seekIntents = if (durationMs <= 0L) emptyList() else (0..NOTIFICATION_SEEK_STEPS).map { step ->
             val intent = Intent(context, AudioPlayerService::class.java)
                 .setAction(AudioPlayerService.ACTION_SEEK_TO)
@@ -303,6 +334,14 @@ internal class VivoMusicIslandBridge(private val context: Context) {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
     ) }
 
+    private fun drawingControl(action: String, songKey: String, request: Int) = drawingControls.getOrPut(action to songKey) {
+        PendingIntent.getService(context, ID + request,
+            Intent(context, AudioPlayerService::class.java).setAction(action)
+                .setData(Uri.Builder().scheme("neriplayer-vivo-control").authority("toggle").appendPath(songKey).build())
+                .putExtra(AudioPlayerService.EXTRA_SEEK_SONG_KEY, songKey),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    }
+
     private fun control(action: String, request: Int) = transportIntents.getOrPut(action) { PendingIntent.getService(context, ID + request,
         Intent(context, AudioPlayerService::class.java).setAction(action),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE) }
@@ -322,6 +361,9 @@ internal class VivoMusicIslandBridge(private val context: Context) {
         seekIntents = emptyList()
         seekTargets = emptyList()
         checkedIntents.clear()
+        drawingControls.clear()
+        progressMotion.clear()
+        if (Build.VERSION.SDK_INT >= 35) animatedCard.clear()
         handler.removeCallbacks(rollback)
     }
 }

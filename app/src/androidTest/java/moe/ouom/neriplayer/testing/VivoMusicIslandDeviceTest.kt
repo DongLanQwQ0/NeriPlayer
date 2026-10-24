@@ -50,11 +50,19 @@ class VivoMusicIslandDeviceTest {
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
             val remote = notification.extras.getParcelable("notification.superx.customTemplate", android.widget.RemoteViews::class.java)!!
             val card = remote.apply(context, null)
+            assertTrue("Production RemoteViews did not inflate", card is android.view.ViewGroup)
+            val inspected = if (card.javaClass.name.contains("RemoteCompose")) {
+                // Text is rasterized from the shared XML design in the animated document.
+                type.getDeclaredMethod("classicCard", inputsType, android.app.PendingIntent::class.java,
+                    Boolean::class.javaPrimitiveType).apply { isAccessible = true }
+                    .invoke(bridge, inputs, notification.contentIntent, false)
+                    .let { (it as android.widget.RemoteViews).apply(context, null) }
+            } else card
             fun id(name: String) = context.resources.getIdentifier(name, "id", context.packageName)
-            assertEquals("00:15", card.findViewById<android.widget.TextView>(id("vivo_music_elapsed")).text.toString())
-            assertEquals("00:30", card.findViewById<android.widget.TextView>(id("vivo_music_duration")).text.toString())
-            assertEquals("A real lyric line", card.findViewById<android.widget.TextView>(id("vivo_music_artist")).text.toString())
-            assertEquals(500, card.findViewById<android.widget.ProgressBar>(id("vivo_music_progress")).progress)
+            assertEquals("00:15", inspected.findViewById<android.widget.TextView>(id("vivo_music_elapsed")).text.toString())
+            assertEquals("00:30", inspected.findViewById<android.widget.TextView>(id("vivo_music_duration")).text.toString())
+            assertEquals("A real lyric line", inspected.findViewById<android.widget.TextView>(id("vivo_music_artist")).text.toString())
+            assertEquals(500, inspected.findViewById<android.widget.ProgressBar>(id("vivo_music_progress")).progress)
         }
         try {
             manager.notify(id, notification)

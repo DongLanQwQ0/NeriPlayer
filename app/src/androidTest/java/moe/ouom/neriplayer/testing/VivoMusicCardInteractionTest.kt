@@ -5,11 +5,13 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Rect
 import android.graphics.drawable.BitmapDrawable
 import android.os.Build
 import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
+import android.view.MotionEvent
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.RemoteViews
@@ -57,26 +59,30 @@ class VivoMusicCardInteractionTest {
             File(context.getExternalFilesDir(null), "vivo-controls-preview.png").outputStream().use {
                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
             }
-            val favorite = preview.findViewById<android.widget.CheckBox>(id("vivo_music_favorite"))
+            val inspected = classicCard(SongItem(-1L, "Music controls", "Artist", "test", 0L, 60_000L, null))
+            val favorite = inspected.findViewById<android.widget.CheckBox>(id("vivo_music_favorite"))
+            inspected.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+            inspected.layout(0, 0, width, inspected.measuredHeight)
             assertEquals((44 * context.resources.displayMetrics.density).roundToInt(), favorite.width)
             assertFalse(favorite.isChecked)
-            val targets = preview.findViewById<LinearLayout>(id("vivo_music_seek_targets"))
+            val targets = inspected.findViewById<LinearLayout>(id("vivo_music_seek_targets"))
             assertEquals(41, targets.childCount)
             for (index in 0 until targets.childCount) assertNull(targets.getChildAt(index).background)
         }
     }
 
     @Test
-    fun progressReapplyReusesTheExistingTapTargets() {
+    fun classicProgressReapplyReusesTheExistingTapTargets() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("runVivoCardRender") == "true")
         instrumentation.runOnMainSync {
             val song = SongItem(-1L, "Music controls", "Artist", "test", 0L, 60_000L, null)
-            val remote = cardRemoteViews(song)
+            val remote = cardRemoteViews(song, classic = true)
             val preview = remote.apply(context, null)
             val row = preview.findViewById<LinearLayout>(id("vivo_music_seek_targets"))
             val original = (0 until row.childCount).map(row::getChildAt)
             assertEquals(41, original.size)
-            cardRemoteViews(song).reapply(context, preview)
+            cardRemoteViews(song, classic = true).reapply(context, preview)
             assertEquals(41, row.childCount)
             original.forEachIndexed { index, target ->
                 assertSame("Progress updates must reuse target $index", target, row.getChildAt(index))
@@ -107,15 +113,18 @@ class VivoMusicCardInteractionTest {
             lateinit var oldCard: View
             instrumentation.runOnMainSync {
                 oldCard = card(first)
-                val playing = oldCard.findViewById<android.widget.CheckBox>(id("vivo_music_play"))
-                assertFalse(playing.isChecked)
-                playing.performClick()
-                assertTrue("The icon must change synchronously, before the service handles the intent", playing.isChecked)
-                playing.performClick()
-                assertFalse(playing.isChecked)
-                val targets = oldCard.findViewById<LinearLayout>(id("vivo_music_seek_targets"))
-                assertEquals(41, targets.childCount)
-                assertTrue(targets.getChildAt(20).performClick())
+            }
+            scenario.onActivity { activity ->
+                activity.setContentView(oldCard, ViewGroup.LayoutParams(oldCard.measuredWidth, oldCard.measuredHeight))
+            }
+            instrumentation.waitForIdleSync()
+            instrumentation.runOnMainSync {
+                val before = pixels(oldCard)
+                tap(oldCard, first, "vivo_music_play")
+                assertFalse("The icon must change synchronously", before.contentEquals(pixels(oldCard)))
+                tap(oldCard, first, "vivo_music_play")
+                assertTrue(before.contentEquals(pixels(oldCard)))
+                tap(oldCard, first, "vivo_music_seek_targets", 20)
             }
             await("Tap did not seek the actual player") {
                 kotlin.math.abs(PlayerManager.playbackPositionFlow.value - 30_000L) < 500L
@@ -126,7 +135,7 @@ class VivoMusicCardInteractionTest {
             playPaused(second)
             val positionBeforeStaleClick = PlayerManager.playbackPositionFlow.value
             instrumentation.runOnMainSync {
-                oldCard.findViewById<LinearLayout>(id("vivo_music_seek_targets")).getChildAt(30).performClick()
+                tap(oldCard, first, "vivo_music_seek_targets", 30)
             }
             Thread.sleep(500)
             assertEquals("Old song controls must not seek the new song", positionBeforeStaleClick, PlayerManager.playbackPositionFlow.value)
@@ -164,9 +173,42 @@ class VivoMusicCardInteractionTest {
         await("Fixture did not pause") { !PlayerManager.isPlayingFlow.value && !PlayerManager.playWhenReadyFlow.value }
     }
 
-    private fun card(song: SongItem): View = cardRemoteViews(song).apply(context, null)
+    private fun card(song: SongItem): View = cardRemoteViews(song).apply(context, null).also { view ->
+        val width = (360 * context.resources.displayMetrics.density).roundToInt()
+        view.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+        view.layout(0, 0, width, view.measuredHeight)
+    }
 
-    private fun cardRemoteViews(song: SongItem): RemoteViews {
+    private fun classicCard(song: SongItem): ViewGroup = cardRemoteViews(song, classic = true).apply(context, null) as ViewGroup
+
+    private fun pixels(view: View): IntArray {
+        val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+        view.draw(Canvas(bitmap))
+        return IntArray(bitmap.width * bitmap.height).also {
+            bitmap.getPixels(it, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+            bitmap.recycle()
+        }
+    }
+
+    private fun tap(view: View, song: SongItem, name: String, step: Int? = null) {
+        val layout = classicCard(song)
+        layout.measure(View.MeasureSpec.makeMeasureSpec(view.width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+        layout.layout(0, 0, view.width, layout.measuredHeight)
+        val target = if (step == null) layout.findViewById<View>(id(name)) else
+            layout.findViewById<LinearLayout>(id(name)).getChildAt(step)
+        val rect = Rect(0, 0, target.width, target.height)
+        layout.offsetDescendantRectToMyCoords(target, rect)
+        val now = SystemClock.uptimeMillis()
+        for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
+            val event = MotionEvent.obtain(now, now, action, rect.exactCenterX(), rect.exactCenterY(), 0)
+            view.dispatchTouchEvent(event)
+            event.recycle()
+        }
+    }
+
+    private fun cardRemoteViews(song: SongItem, classic: Boolean = false): RemoteViews {
         val type = Class.forName("moe.ouom.neriplayer.core.player.service.presentation.VivoMusicIslandBridge")
         val bridge = type.getDeclaredConstructor(Context::class.java).newInstance(context)
         val lyricType = Class.forName("moe.ouom.neriplayer.core.player.service.notification.StatusBarLyricNotificationState")
@@ -177,7 +219,10 @@ class VivoMusicCardInteractionTest {
         )
         val notification = type.declaredMethods.single { it.name.startsWith("notification$") }
             .invoke(bridge, inputs, 0) as Notification
-        val remote = notification.extras.getParcelable("notification.superx.customTemplate", RemoteViews::class.java)!!
+        val remote = if (classic) type.getDeclaredMethod("classicCard", inputsType,
+            android.app.PendingIntent::class.java, Boolean::class.javaPrimitiveType).apply { isAccessible = true }
+            .invoke(bridge, inputs, notification.contentIntent, false) as RemoteViews else
+            notification.extras.getParcelable("notification.superx.customTemplate", RemoteViews::class.java)!!
         // Match the actual Binder boundary: system hosts render a parcelled RemoteViews, not its local bitmap cache.
         val parcel = android.os.Parcel.obtain()
         val delivered = try {

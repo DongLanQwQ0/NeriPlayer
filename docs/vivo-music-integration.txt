@@ -54,7 +54,12 @@ waveColor 提供青蓝两色。已在真机连续帧中观察到音律条高度�
 请求携带歌曲身份，旧卡片不能跳转新歌；未知时长不提供跳转。
 时长优先采用当前播放器的实际媒体时长；试听流按试听长度显示和跳转，避免把歌曲标称时长当作可播放范围。
 标准 RemoteViews 不支持 SeekBar 或拖动回调，因此不提供连续拖动。
-点按热区无独立水波纹，避免窄热区出现竖向闪带。当前进度直接设值；点按跳转和正常播放的连续横向动画尚未实现，RemoteViews.setProgressBar 不提供 animate 参数。
+OriginOS 6 的格式 6 绘制宿主现在由生产 VivoMusicIslandBridge 接入：点击后执行 400ms
+smoothstep 过渡，正常播放按宿主时钟连续推进；快速重选从当前可见值开始。
+播放器确认与一秒进度刷新不终止正在执行的过渡；暂停、切歌、时长变化与超时回滚
+由 VivoMusicProgressMotion 同步。较旧绘制宿主保留原有 XML 卡片。
+静态封面、模糊底图、文字与按钮继续取自现有 XML 布局，只有视觉内容变化才重新
+栅格化、编码并缓存；普通进度刷新复用底图。绘制层覆盖点击层，避免竖向水波纹闪带。
 播放和收藏采用系统 CheckBox 状态图，触摸后立即切换图标，再通过显式 PendingIntent 下发目标状态。
 进度跳转立即预览目标位置。待确认状态最多保留三秒，确认后使用真实状态，超时回滚，切歌或撤下时清理。
 自定义卡片要求 Android 12 / API 31 及以上，以使用 RemoteViews 的勾选状态回调。
@@ -99,8 +104,8 @@ Android API 36 模拟器中，同一文档不重发通知、不重建 RemoteView
 点击检查在真实附着窗口中通过：RemoteCompose 点击区域经 RemoteViews 的
 PendingIntent 到达独立测试接收器，不启动播放器或修改收藏。离屏触摸检查未能收到
 回调，修正为附着窗口测试后通过；交互验收必须在真实窗口中进行。
-remote-creation-core 1.0.0-alpha22 仅用于 androidTest，不进入应用运行时依赖。
-这些试验证明系统宿主连续绘制与点击的基础路线可行，完整音乐卡片尚未接入生产。
+上述记录是接入前的原型试验。2026-10-24，remote-creation-core 1.0.0-alpha22 已加入
+playback:runtime，并由生产卡片调用；原型本身不作为正式版交付证据。
 
 2026-10-23，主 probe APK 与 instrumentation 已重新使用相同测试签名安装。
 VivoRemoteSeekAnimationTest 在 API36 模拟器通过：同一文档依次跳转到
@@ -167,10 +172,9 @@ CarMediaBrowserIntegrationTest#vivoQueueDirectoryReturnsTheExistingPlaybackQueue
 红心取消收藏后，原生面板变为“未收藏”，会话收藏操作随之更新，再次点按恢复“已收藏”。
 测试后已回到 Pray For You、恢复原收藏状态并暂停播放。通知去重及帧耗时仍待验收。
 
-本机测试产物与恢复
-F:\Android\NeriPlayerChecks\neriplayer-vivo-test.apk
-F:\Android\NeriPlayerChecks\neriplayer-vivo-androidTest.apk
-F:\Android\NeriPlayerChecks\Restore-VivoMusic.ps1
+本机测试签名与重建
+历史 NeriPlayerChecks 与维护归档已按用户清理要求移除，旧 APK 和恢复脚本不再使用。
 测试包名 moe.ouom.neriplayer.debug，与正式应用分开安装。
-测试签名及由当前 Windows 用户 DPAPI 保护的口令保存在该目录的 signing 子目录。
+测试签名及由当前 Windows 用户 DPAPI 保护的口令保存在 F:\Android\NeriPlayerTestSigning。
+正式签名在 F:\Android\NeriPlayerReleaseSigning，后续包保持同一正式身份。
 所有新增构建工具、依赖、下载和测试大文件均放在 F 盘。

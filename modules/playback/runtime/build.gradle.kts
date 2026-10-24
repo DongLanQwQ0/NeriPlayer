@@ -44,6 +44,7 @@ dependencies {
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.icons)
     implementation(libs.androidx.appcompat)
+    implementation("androidx.compose.remote:remote-creation-core:1.0.0-alpha22")
 
     // HyperOS Focus notifications and privileged UID network control.
     implementation(libs.focus.api)

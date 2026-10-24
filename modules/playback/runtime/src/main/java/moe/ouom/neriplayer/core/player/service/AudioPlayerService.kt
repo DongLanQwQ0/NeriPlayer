@@ -1334,11 +1334,15 @@ class AudioPlayerService : Service() {
                 handleExternalPauseCommand("intent_pause")
             }
             ACTION_TOGGLE_PLAY_PAUSE -> {
-                if (PlayerManager.hasItems()) {
-                    PlayerManager.togglePlayPause()
+                // Remote drawing controls carry a song identity; existing widget callers do not.
+                val expectedSong = intent.getStringExtra(EXTRA_SEEK_SONG_KEY)
+                if (expectedSong == null || expectedSong == PlayerManager.currentSongFlow.value?.stableKey()) {
+                    if (PlayerManager.hasItems()) {
+                        PlayerManager.togglePlayPause()
+                    }
+                    updateAll()
+                    refreshIdleShutdown("widget_toggle_play_pause")
                 }
-                updateAll()
-                refreshIdleShutdown("widget_toggle_play_pause")
             }
             ACTION_NEXT -> {
                 PlayerManager.next()
@@ -1415,11 +1419,14 @@ class AudioPlayerService : Service() {
             }
 
             ACTION_TOGGLE_FAV -> {
-                if (canToggleFavoriteFromExternalSurface(PlayerManager.currentSongFlow.value)) {
-                    PlayerManager.toggleCurrentFavorite()
+                val expectedSong = intent.getStringExtra(EXTRA_SEEK_SONG_KEY)
+                if (expectedSong == null || expectedSong == PlayerManager.currentSongFlow.value?.stableKey()) {
+                    if (canToggleFavoriteFromExternalSurface(PlayerManager.currentSongFlow.value)) {
+                        PlayerManager.toggleCurrentFavorite()
+                    }
+                    updateNotification()
+                    updatePlaybackWidget(force = true)
                 }
-                updateNotification()
-                updatePlaybackWidget(force = true)
             }
 
             ACTION_TOGGLE_FLOATING_LYRICS -> {
