@@ -16,8 +16,8 @@ import androidx.core.graphics.ColorUtils
 import androidx.core.graphics.createBitmap
 import androidx.core.graphics.get
 import moe.ouom.neriplayer.common.graphics.artworkBoxBlurPass
-import moe.ouom.neriplayer.common.graphics.scaledArtworkBlurRadius
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 internal data class PlaybackWidgetVisuals(
     val artwork: Bitmap?,
@@ -103,11 +103,11 @@ private fun playbackWidgetPalette(
     )
 }
 
-private const val ARTWORK_MAX_DIMENSION_PX = 192
-private const val SURFACE_MAX_DIMENSION_PX = 1024
-private const val BACKDROP_BLUR_SOURCE_MAX_PX = 160
-private const val BACKDROP_BLUR_REFERENCE_SIZE_PX = 40
-private const val BACKDROP_BLUR_REFERENCE_RADIUS_PX = 3
+internal const val PLAYBACK_WIDGET_ARTWORK_MAX_DIMENSION_PX = 512
+private const val SURFACE_MAX_DIMENSION_PX = 2048
+private const val SURFACE_MAX_PIXELS = 1024 * 1024
+private const val BACKDROP_BLUR_SOURCE_MAX_PX = PLAYBACK_WIDGET_ARTWORK_MAX_DIMENSION_PX
+private const val BACKDROP_BLUR_RADIUS_PX = 3
 private const val BACKDROP_CACHE_MAX_BYTES = 8 * 1024 * 1024
 private const val MINI_SCRIM_START_COLOR = 0x99000000.toInt()
 private const val MINI_SCRIM_END_COLOR = 0xB3000000.toInt()
@@ -118,9 +118,12 @@ internal fun playbackWidgetSurface(
     color: Int,
     renderScale: Float = 1f,
 ): Bitmap {
-    val scale = minOf(renderScale, SURFACE_MAX_DIMENSION_PX.toFloat() / maxOf(size.widthDp, size.heightDp))
+    // Keep wide, high-density widgets native-sized without increasing the old 4MiB surface budget.
+    val scale = minOf(renderScale,
+        SURFACE_MAX_DIMENSION_PX.toFloat() / maxOf(size.widthDp, size.heightDp),
+        sqrt(SURFACE_MAX_PIXELS.toFloat() / (size.widthDp.toFloat() * size.heightDp)))
     val width = (size.widthDp * scale).roundToInt().coerceAtLeast(1)
-    val height = (size.heightDp * scale).roundToInt().coerceAtLeast(1)
+    val height = minOf((size.heightDp * scale).roundToInt(), SURFACE_MAX_PIXELS / width).coerceAtLeast(1)
     val path = playbackWidgetCornerPath(
         width = width.toFloat(),
         height = height.toFloat(),
@@ -164,7 +167,7 @@ internal fun playbackWidgetBackdrop(
 }
 
 /**
- * 保留足够采样像素并按分辨率换算模糊半径，避免整块小组件暴露低清插值网格。
+ * 保留高清封面的采样像素，直接在工作图上做 3px 轻模糊，避免低清放大与过度模糊。
  * 逐级缩小抑制混叠，滑动窗口模糊保持线性开销。
  */
 internal fun playbackWidgetBlurSource(artwork: Bitmap, targetWidth: Int, targetHeight: Int): Bitmap {
@@ -174,7 +177,8 @@ internal fun playbackWidgetBlurSource(artwork: Bitmap, targetWidth: Int, targetH
         .coerceAtLeast(1)
     val left = (artwork.width - cropWidth) / 2
     val top = (artwork.height - cropHeight) / 2
-    val scale = minOf(1f, BACKDROP_BLUR_SOURCE_MAX_PX.toFloat() / maxOf(cropWidth, cropHeight))
+    val sampleLimit = minOf(BACKDROP_BLUR_SOURCE_MAX_PX, maxOf(targetWidth, targetHeight))
+    val scale = minOf(1f, sampleLimit.toFloat() / maxOf(cropWidth, cropHeight))
     val blurWidth = (cropWidth * scale).roundToInt().coerceAtLeast(1)
     val blurHeight = (cropHeight * scale).roundToInt().coerceAtLeast(1)
     var current = artwork
@@ -195,10 +199,8 @@ internal fun playbackWidgetBlurSource(artwork: Bitmap, targetWidth: Int, targetH
     if (current !== artwork) current.recycle()
     val pixels = IntArray(blurWidth * blurHeight)
     blurSource.getPixels(pixels, 0, blurWidth, 0, 0, blurWidth, blurHeight)
-    val radius = scaledArtworkBlurRadius(BACKDROP_BLUR_REFERENCE_RADIUS_PX,
-        (maxOf(blurWidth, blurHeight).toFloat() / BACKDROP_BLUR_REFERENCE_SIZE_PX).coerceAtLeast(1f))
-    val horizontal = artworkBoxBlurPass(pixels, blurWidth, blurHeight, radius, horizontal = true)
-    val blurred = artworkBoxBlurPass(horizontal, blurWidth, blurHeight, radius, horizontal = false)
+    val horizontal = artworkBoxBlurPass(pixels, blurWidth, blurHeight, BACKDROP_BLUR_RADIUS_PX, horizontal = true)
+    val blurred = artworkBoxBlurPass(horizontal, blurWidth, blurHeight, BACKDROP_BLUR_RADIUS_PX, horizontal = false)
     blurSource.setPixels(blurred, 0, blurWidth, 0, 0, blurWidth, blurHeight)
     return blurSource
 }
@@ -218,7 +220,7 @@ private fun Bitmap.toSquareBitmap(): Bitmap {
     val sourceSize = minOf(width, height)
     val left = (width - sourceSize) / 2
     val top = (height - sourceSize) / 2
-    val targetSize = sourceSize.coerceAtMost(ARTWORK_MAX_DIMENSION_PX)
+    val targetSize = sourceSize.coerceAtMost(PLAYBACK_WIDGET_ARTWORK_MAX_DIMENSION_PX)
     return createBitmap(targetSize, targetSize).also { output ->
         Canvas(output).drawBitmap(
             this,

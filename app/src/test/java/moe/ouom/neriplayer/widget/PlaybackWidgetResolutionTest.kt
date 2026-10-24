@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.widget
 import android.app.Application
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
@@ -30,17 +31,28 @@ import kotlin.math.roundToInt
 @Config(sdk = [35], application = Application::class, qualifiers = "w400dp-h900dp-xxhdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class PlaybackWidgetResolutionTest {
+    @Test fun `full resolution cover persists for launcher refreshes without the player`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val cover = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.RED) }
+        val state = PlaybackWidgetState.idle(context).copy(hasSong = true, artworkReady = true)
+        PlaybackWidgetUpdater.updateFromPlaybackService(context, state, cover)
+        val stored = BitmapFactory.decodeFile(File(context.filesDir, "playback_widget_artwork.png").absolutePath)
+        assertNotNull(stored)
+        assertEquals(512 to 512, stored.width to stored.height)
+        assertEquals(Color.RED, stored.getPixel(256, 256))
+    }
+
     @Test fun `large compact widget keeps native shape controls and a screen density backdrop after parceling`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val cover = Bitmap.createBitmap(192, 192, Bitmap.Config.ARGB_8888).apply {
+        val cover = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888).apply {
             Canvas(this).drawPaint(Paint().apply {
-                shader = LinearGradient(0f, 0f, 192f, 192f,
+                shader = LinearGradient(0f, 0f, 512f, 512f,
                     intArrayOf(0xFFB75968.toInt(), 0xFF653E23.toInt(), 0xFF1D3222.toInt()),
                     null, Shader.TileMode.CLAMP)
             })
         }
         val visuals = buildPlaybackWidgetVisuals(cover)
-        val size = PlaybackWidgetSize(260, 188)
+        val size = PlaybackWidgetSize(420, 240)
         val density = context.resources.displayMetrics.density
         val state = PlaybackWidgetState.idle(context).copy(
             title = "Inevitability", subtitle = "Tido Kang", hasSong = true, isPlaying = true, showPauseAction = true,

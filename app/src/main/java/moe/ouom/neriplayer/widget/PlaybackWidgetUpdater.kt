@@ -346,7 +346,7 @@ internal object PlaybackWidgetUpdater {
         val albumArtwork = if (!includeBitmapPayload) null else if (compact) {
             val cover = visuals.compactArtwork ?: requireNotNull(
                 AppCompatResources.getDrawable(context, R.drawable.ic_neriplayer_round),
-            ).toBitmap(192, 192)
+            ).toBitmap(PLAYBACK_WIDGET_ARTWORK_MAX_DIMENSION_PX, PLAYBACK_WIDGET_ARTWORK_MAX_DIMENSION_PX)
             visuals.compactBackdrop(cover, size, cornerRadiusDp, context.resources.displayMetrics.density)
         } else visuals.artwork
         if (albumArtwork != null) {

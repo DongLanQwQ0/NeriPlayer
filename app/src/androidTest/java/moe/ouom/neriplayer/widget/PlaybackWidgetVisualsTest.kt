@@ -201,7 +201,7 @@ class PlaybackWidgetVisualsTest {
         }
         val cases = listOf(
             Triple(PlaybackWidgetSize(300, 180), 900, 540),
-            Triple(PlaybackWidgetSize(600, 480), 1024, 819),
+            Triple(PlaybackWidgetSize(600, 480), 1145, 915),
         )
         try {
             cases.forEach { (size, widthPx, heightPx) ->
