@@ -198,6 +198,15 @@ CarMediaBrowserIntegrationTest#vivoQueueDirectoryReturnsTheExistingPlaybackQueue
 并依赖宿主 animation-time 使格式 6 每帧重算固定目标；原生测试分别推进真实墙钟和
 Robolectric 单调时钟后，实际像素为 ffff0000→ff990066→ff0000ff，延迟送达回归通过。
 
+切歌期间播放按钮稳定性
+2026-10-24，通知原本按 enginePlaying 或 buffering && playbackControlPlaying 选择按钮。
+切歌 enterPendingMediaLoad 先停止旧音源，再建立加载任务；各 StateFlow 回调独立到达，
+该间隙会短暂落入“未播放且未缓冲”，导致按钮反复切换。通知按钮现直接使用既有
+playbackControlPlayingFlow 的播放意图，与应用内按钮一致；主动暂停和淡出立即显示播放按钮。
+媒体会话状态、实际播放速度与音频引擎保持原逻辑，不把加载过程伪报为正在输出音频。
+回归覆盖停止旧音源、缓冲、READY 先于 isPlaying 回调、加载中暂停及暂停淡出。
+相关四组单元测试通过；正式包安装与实际切歌外观在构建完成后验证。
+
 通知小图标
 用户最终选择透明底，桌面浅橙背景保持。vivoRelease 覆盖通知资源，复用已选丝带的
 单色轮廓与透明开口；vivo 发布时缓存为透明 ARGB 位图 Icon，避开资源型图标的

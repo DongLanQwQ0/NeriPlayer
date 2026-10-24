@@ -93,7 +93,9 @@ internal fun servicePlaybackSpeed(state: Int, snapshot: PlaybackServicePlaybackS
     if (state == PlaybackState.STATE_PLAYING) snapshot.playbackSpeed else 0.0f
 
 internal fun servicePlaybackControlPlaying(snapshot: PlaybackServicePlaybackSnapshot): Boolean =
-    snapshot.enginePlaying || (snapshot.buffering && snapshot.playbackControlPlaying)
+    // Transport intent remains stable while replacing media, seeking or buffering. Engine
+    // callbacks arrive separately and must not turn those gaps into a paused button state.
+    snapshot.playbackControlPlaying
 
 internal fun mediaSessionPlaybackActions(): Long =
     PlaybackState.ACTION_PLAY or

@@ -49,7 +49,7 @@ class PlaybackServicePresentationOwnerTest {
     }
 
     @Test
-    fun `transport intent without engine playback remains paused`() {
+    fun `transport intent retains pause control without reporting advancing playback`() {
         val requested = playback(song()).copy(
             transportActive = true,
             playbackControlPlaying = true,
@@ -57,7 +57,10 @@ class PlaybackServicePresentationOwnerTest {
 
         assertEquals(PlaybackState.STATE_PAUSED, resolveServicePlaybackState(requested))
         assertEquals(0.0f, servicePlaybackSpeed(resolveServicePlaybackState(requested), requested))
-        assertFalse(servicePlaybackControlPlaying(requested))
+        assertTrue(servicePlaybackControlPlaying(requested))
+        assertFalse(servicePlaybackControlPlaying(requested.copy(playbackControlPlaying = false)))
+        // Explicit pause must take effect even while the engine finishes its audio fade.
+        assertFalse(servicePlaybackControlPlaying(requested.copy(enginePlaying = true, playbackControlPlaying = false)))
     }
 
     @Test
@@ -91,7 +94,7 @@ class PlaybackServicePresentationOwnerTest {
         assertEquals(0.0f, servicePlaybackSpeed(resolveServicePlaybackState(buffering), buffering))
         assertTrue(servicePlaybackControlPlaying(buffering))
         assertFalse(servicePlaybackControlPlaying(buffering.copy(playbackControlPlaying = false)))
-        assertTrue(servicePlaybackControlPlaying(playback(song()).copy(enginePlaying = true)))
+        assertTrue(servicePlaybackControlPlaying(playback(song()).copy(enginePlaying = true, playbackControlPlaying = true)))
     }
 
     @Test
@@ -168,7 +171,7 @@ class PlaybackServicePresentationOwnerTest {
     }
 
     @Test
-    fun `notification stops exposing pause for idle intent and keeps it while buffering`() = runTest {
+    fun `notification controls stay stable across track replacement and accept pause during loading`() = runTest {
         val current = song()
         val source = FakeSource(playback(current).copy(transportActive = true, playbackControlPlaying = true))
         val port = mock(PlaybackServicePresentationPort::class.java)
@@ -177,16 +180,27 @@ class PlaybackServicePresentationOwnerTest {
         val owner = owner(source, backgroundScope, port, artwork)
         val lyricState = StatusBarLyricNotificationState(false, null)
 
-        owner.updateNotification(false, true, lyricState, false)
-        val pausedInputs = mockingDetails(port).invocations
-            .last { it.method.name == "publishNotification" }.arguments[0] as PlaybackServiceNotificationRenderInputs
-        assertFalse(pausedInputs.playbackControlPlaying)
-
-        source.currentPlayback = source.currentPlayback.copy(buffering = true)
-        owner.updateNotification(false, true, lyricState, false)
-        val bufferingInputs = mockingDetails(port).invocations
-            .last { it.method.name == "publishNotification" }.arguments[0] as PlaybackServiceNotificationRenderInputs
-        assertTrue(bufferingInputs.playbackControlPlaying)
+        // These callbacks can arrive independently: old media stops before the load job
+        // exists, then buffering ends before onIsPlayingChanged(true) is delivered.
+        val stages = listOf(
+            source.currentPlayback.copy(enginePlaying = true),
+            source.currentPlayback.copy(enginePlaying = false),
+            source.currentPlayback.copy(buffering = true),
+            source.currentPlayback.copy(buffering = false),
+            source.currentPlayback.copy(enginePlaying = true),
+            source.currentPlayback.copy(buffering = true, playbackControlPlaying = false),
+            source.currentPlayback.copy(enginePlaying = true, playbackControlPlaying = false),
+            source.currentPlayback.copy(enginePlaying = false, playbackControlPlaying = false),
+        )
+        for (stage in stages) {
+            source.currentPlayback = stage
+            owner.updateNotification(true, true, lyricState, false)
+        }
+        val inputs = mockingDetails(port).invocations
+            .filter { it.method.name == "publishNotification" }
+            .map { it.arguments[0] as PlaybackServiceNotificationRenderInputs }
+        assertEquals(listOf(true, true, true, true, true, false, false, false),
+            inputs.map { it.playbackControlPlaying })
     }
 
     @Test
