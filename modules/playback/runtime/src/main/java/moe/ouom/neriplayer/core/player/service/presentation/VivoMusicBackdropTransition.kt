@@ -18,6 +18,7 @@ internal class VivoMusicBackdropTransition {
             from = frame(now)?.let { frame ->
                 if (frame.alpha >= 1f) frame.to else {
                     Bitmap.createBitmap(frame.to.width, frame.to.height, Bitmap.Config.ARGB_8888).also { blend ->
+                        blend.setHasAlpha(false)
                         Canvas(blend).apply {
                             drawBitmap(frame.from, 0f, 0f, null)
                             drawBitmap(frame.to, 0f, 0f, Paint().apply { alpha = (frame.alpha * 255).toInt() })

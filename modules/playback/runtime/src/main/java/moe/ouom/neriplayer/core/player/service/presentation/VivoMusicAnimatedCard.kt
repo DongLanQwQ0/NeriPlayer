@@ -64,7 +64,10 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
         override fun isAlpha8Image(image: Any) = (image as Bitmap).config == Bitmap.Config.ALPHA_8
         override fun imageToByteArray(image: Any): ByteArray = encodedImages.getOrPut(image as Bitmap) {
             ByteArrayOutputStream().use { output ->
-                check(image.compress(Bitmap.CompressFormat.PNG, 100, output))
+                // Opaque album backdrops need bounded payloads even at zero blur. UI layers
+                // retain lossless alpha; crossfades still animate the host layer's opacity.
+                val format = if (image.hasAlpha()) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG
+                check(image.compress(format, 92, output))
                 output.toByteArray()
             }
         }
@@ -80,7 +83,7 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
         seeks: List<PendingIntent>,
     ): RemoteViews {
         // Progress-only changes do not inflate XML, redraw artwork, or compress bitmaps again.
-        val key = inputs.copy(positionMs = 0L)
+        val key = inputs.copy(positionMs = 0L, backgroundArtwork = null)
         val surface = surfaces[cameraSafe]?.takeIf {
             it.key == key && it.configuration == context.resources.configuration.hashCode()
         } ?: createSurface(xml, key).also { next ->

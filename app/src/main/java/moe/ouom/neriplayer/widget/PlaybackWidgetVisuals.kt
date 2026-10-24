@@ -11,21 +11,35 @@ import android.graphics.PorterDuffXfermode
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
+import android.util.LruCache
 import androidx.core.graphics.ColorUtils
 import androidx.core.graphics.createBitmap
 import androidx.core.graphics.get
+import moe.ouom.neriplayer.common.graphics.artworkBoxBlurPass
+import moe.ouom.neriplayer.common.graphics.scaledArtworkBlurRadius
 import kotlin.math.roundToInt
 
 internal data class PlaybackWidgetVisuals(
     val artwork: Bitmap?,
     val compactArtwork: Bitmap?,
-    val primaryControl: Bitmap?,
+    val primaryControlColor: Int,
     val backgroundColor: Int = 0xFFF4F7F4.toInt(),
     val textPrimary: Int = 0xFF1C2521.toInt(),
     val textSecondary: Int = 0xFF48534D.toInt(),
     val controlTint: Int = textPrimary,
     val primaryControlTint: Int = 0xFF142B20.toInt(),
-)
+) {
+    private data class BackdropKey(val size: PlaybackWidgetSize, val radius: Float, val scale: Float)
+    private val backdrops = object : LruCache<BackdropKey, Bitmap>(BACKDROP_CACHE_MAX_BYTES) {
+        override fun sizeOf(key: BackdropKey, value: Bitmap) = value.byteCount
+    }
+
+    fun compactBackdrop(cover: Bitmap, size: PlaybackWidgetSize, radius: Float, scale: Float): Bitmap {
+        val key = BackdropKey(size, radius, scale)
+        return backdrops[key] ?: playbackWidgetBackdrop(cover, size, radius,
+            applyScrim = true, renderScale = scale).also { backdrops.put(key, it) }
+    }
+}
 
 internal fun buildPlaybackWidgetVisuals(
     artwork: Bitmap?,
@@ -40,7 +54,7 @@ internal fun buildPlaybackWidgetVisuals(
         return PlaybackWidgetVisuals(
             artwork = null,
             compactArtwork = null,
-            primaryControl = null,
+            primaryControlColor = palette.primaryControlColor,
             backgroundColor = palette.backgroundColor,
             textPrimary = palette.textPrimary,
             textSecondary = palette.textSecondary,
@@ -52,7 +66,7 @@ internal fun buildPlaybackWidgetVisuals(
     return PlaybackWidgetVisuals(
         artwork = roundedArtwork,
         compactArtwork = squareArtwork,
-        primaryControl = createPrimaryControl(palette.primaryControlColor),
+        primaryControlColor = palette.primaryControlColor,
         backgroundColor = palette.backgroundColor,
         textPrimary = palette.textPrimary,
         textSecondary = palette.textSecondary,
@@ -91,9 +105,10 @@ private fun playbackWidgetPalette(
 
 private const val ARTWORK_MAX_DIMENSION_PX = 192
 private const val SURFACE_MAX_DIMENSION_PX = 1024
-private const val BACKDROP_BLUR_SOURCE_MAX_PX = 40
-private const val BACKDROP_BLUR_RADIUS_PX = 2
-private const val PRIMARY_CONTROL_SIZE_PX = 96
+private const val BACKDROP_BLUR_SOURCE_MAX_PX = 160
+private const val BACKDROP_BLUR_REFERENCE_SIZE_PX = 40
+private const val BACKDROP_BLUR_REFERENCE_RADIUS_PX = 2
+private const val BACKDROP_CACHE_MAX_BYTES = 8 * 1024 * 1024
 private const val MINI_SCRIM_START_COLOR = 0x99000000.toInt()
 private const val MINI_SCRIM_END_COLOR = 0xB3000000.toInt()
 
@@ -149,8 +164,8 @@ internal fun playbackWidgetBackdrop(
 }
 
 /**
- * 按目标比例居中裁切封面并逐级缩到很小，放大时由双线性过滤得到柔和的模糊底图，
- * 避免 192px 封面被直接拉伸到整块小组件时显得发糊发虚
+ * 保留足够采样像素并按分辨率换算模糊半径，避免整块小组件暴露低清插值网格。
+ * 逐级缩小抑制混叠，滑动窗口模糊保持线性开销。
  */
 internal fun playbackWidgetBlurSource(artwork: Bitmap, targetWidth: Int, targetHeight: Int): Bitmap {
     val cropWidth = minOf(artwork.width, (artwork.height * targetWidth.toFloat() / targetHeight).roundToInt())
@@ -180,43 +195,12 @@ internal fun playbackWidgetBlurSource(artwork: Bitmap, targetWidth: Int, targetH
     if (current !== artwork) current.recycle()
     val pixels = IntArray(blurWidth * blurHeight)
     blurSource.getPixels(pixels, 0, blurWidth, 0, 0, blurWidth, blurHeight)
-    val horizontal = boxBlurPass(pixels, blurWidth, blurHeight, BACKDROP_BLUR_RADIUS_PX, horizontal = true)
-    val blurred = boxBlurPass(horizontal, blurWidth, blurHeight, BACKDROP_BLUR_RADIUS_PX, horizontal = false)
+    val radius = scaledArtworkBlurRadius(BACKDROP_BLUR_REFERENCE_RADIUS_PX,
+        (maxOf(blurWidth, blurHeight).toFloat() / BACKDROP_BLUR_REFERENCE_SIZE_PX).coerceAtLeast(1f))
+    val horizontal = artworkBoxBlurPass(pixels, blurWidth, blurHeight, radius, horizontal = true)
+    val blurred = artworkBoxBlurPass(horizontal, blurWidth, blurHeight, radius, horizontal = false)
     blurSource.setPixels(blurred, 0, blurWidth, 0, 0, blurWidth, blurHeight)
     return blurSource
-}
-
-/** 单方向盒式模糊，边缘取最近像素；横竖各一次即可近似高斯模糊 */
-internal fun boxBlurPass(
-    source: IntArray,
-    width: Int,
-    height: Int,
-    radius: Int,
-    horizontal: Boolean,
-): IntArray {
-    val output = IntArray(source.size)
-    val lineCount = if (horizontal) height else width
-    val lineLength = if (horizontal) width else height
-    val taps = radius * 2 + 1
-    for (line in 0 until lineCount) {
-        for (position in 0 until lineLength) {
-            var alpha = 0
-            var red = 0
-            var green = 0
-            var blue = 0
-            for (offset in -radius..radius) {
-                val sample = (position + offset).coerceIn(0, lineLength - 1)
-                val color = if (horizontal) source[line * width + sample] else source[sample * width + line]
-                alpha += color ushr 24
-                red += color ushr 16 and 0xFF
-                green += color ushr 8 and 0xFF
-                blue += color and 0xFF
-            }
-            val index = if (horizontal) line * width + position else position * width + line
-            output[index] = (alpha / taps shl 24) or (red / taps shl 16) or (green / taps shl 8) or (blue / taps)
-        }
-    }
-    return output
 }
 
 private fun scaledBitmap(source: Bitmap, sourceRect: Rect, width: Int, height: Int): Bitmap {
@@ -313,17 +297,4 @@ private fun Bitmap.sampleThemeSeed(): Int {
         (green / weightTotal).toInt().coerceIn(0, 255),
         (blue / weightTotal).toInt().coerceIn(0, 255),
     )
-}
-
-private fun createPrimaryControl(color: Int): Bitmap {
-    val output = createBitmap(PRIMARY_CONTROL_SIZE_PX, PRIMARY_CONTROL_SIZE_PX)
-    val center = PRIMARY_CONTROL_SIZE_PX / 2f
-    val radius = center - 4f
-    Canvas(output).drawCircle(
-        center,
-        center,
-        radius,
-        Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color },
-    )
-    return output
 }

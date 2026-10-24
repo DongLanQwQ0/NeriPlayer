@@ -312,14 +312,9 @@ internal object PlaybackWidgetUpdater {
                 },
             )
         }
-        if (includeBitmapPayload && visuals.primaryControl != null) {
-            views.setImageViewBitmap(R.id.widget_play_pause_background, visuals.primaryControl)
-        } else {
-            views.setImageViewResource(
-                R.id.widget_play_pause_background,
-                R.drawable.widget_primary_control_background,
-            )
-        }
+        // Let the host rasterize the oval at its actual size instead of enlarging a 96px bitmap.
+        views.setImageViewResource(R.id.widget_play_pause_background, R.drawable.widget_primary_control_background)
+        views.setInt(R.id.widget_play_pause_background, "setColorFilter", visuals.primaryControlColor)
         val cornerRadiusDp = context.resources.getDimension(R.dimen.widget_background_radius) /
             context.resources.displayMetrics.density
         views.setInt(R.id.widget_root, "setBackgroundColor", android.graphics.Color.TRANSPARENT)
@@ -352,8 +347,7 @@ internal object PlaybackWidgetUpdater {
             val cover = visuals.compactArtwork ?: requireNotNull(
                 AppCompatResources.getDrawable(context, R.drawable.ic_neriplayer_round),
             ).toBitmap(192, 192)
-            playbackWidgetBackdrop(cover, size, cornerRadiusDp, applyScrim = true,
-                renderScale = context.resources.displayMetrics.density)
+            visuals.compactBackdrop(cover, size, cornerRadiusDp, context.resources.displayMetrics.density)
         } else visuals.artwork
         if (albumArtwork != null) {
             views.setImageViewBitmap(R.id.widget_album_art, albumArtwork)

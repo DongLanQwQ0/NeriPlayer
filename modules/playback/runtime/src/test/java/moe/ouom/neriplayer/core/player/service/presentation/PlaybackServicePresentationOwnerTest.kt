@@ -31,6 +31,23 @@ import org.mockito.Mockito.mockingDetails
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(AndroidJUnit4::class)
 class PlaybackServicePresentationOwnerTest {
+    @Test fun `notification backdrop receives existing media artwork without enlarging its cover payload`() = runTest {
+        val current = song()
+        val source = FakeSource(playback(current))
+        val port = mock(PlaybackServicePresentationPort::class.java)
+        val artwork = mock(PlaybackArtworkOwner::class.java)
+        val full = mock(android.graphics.Bitmap::class.java)
+        val thumbnail = mock(android.graphics.Bitmap::class.java)
+        `when`(artwork.snapshotFor(current)).thenReturn(
+            PlaybackArtworkSnapshot("cover", full, thumbnail, true, true, false))
+        owner(source, backgroundScope, port, artwork).updateNotification(false, true,
+            StatusBarLyricNotificationState(false, null), false)
+        val inputs = mockingDetails(port).invocations.single { it.method.name == "publishNotification" }
+            .arguments[0] as PlaybackServiceNotificationRenderInputs
+        org.junit.Assert.assertSame(full, inputs.backgroundArtwork)
+        org.junit.Assert.assertSame(thumbnail, inputs.artwork)
+    }
+
     @Test
     fun `notification progress uses actual preview duration and republishes duration changes`() = runTest {
         val current = song().copy(durationMs = 155_000L)

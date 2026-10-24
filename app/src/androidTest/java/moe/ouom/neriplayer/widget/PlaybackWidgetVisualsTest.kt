@@ -38,13 +38,9 @@ class PlaybackWidgetVisualsTest {
                 val caseLabel = "dark=$isDarkTheme seed=${Integer.toHexString(seedColor)}"
 
                 assertReadableText(visuals, caseLabel)
-                val primaryControl = requireNotNull(visuals.primaryControl)
                 assertReadableContrast(
                     foreground = visuals.primaryControlTint,
-                    background = primaryControl.getPixel(
-                        primaryControl.width / 2,
-                        primaryControl.height / 2,
-                    ),
+                    background = visuals.primaryControlColor,
                     caseLabel = "$caseLabel playback icon",
                 )
             }
@@ -57,7 +53,8 @@ class PlaybackWidgetVisualsTest {
             val visuals = buildPlaybackWidgetVisuals(artwork = null, isDarkTheme = isDarkTheme)
 
             assertNull(visuals.artwork)
-            assertNull(visuals.primaryControl)
+            assertReadableContrast(visuals.primaryControlTint, visuals.primaryControlColor,
+                "dark=$isDarkTheme empty playback icon")
             assertReadableText(visuals, "dark=$isDarkTheme empty artwork")
         }
     }
@@ -264,7 +261,6 @@ class PlaybackWidgetVisualsTest {
             circular.recycle()
             visuals.artwork?.recycle()
             visuals.compactArtwork?.recycle()
-            visuals.primaryControl?.recycle()
             artwork.recycle()
         }
     }
@@ -348,8 +344,7 @@ class PlaybackWidgetVisualsTest {
         val hsv = FloatArray(3)
         Color.colorToHSV(visuals.backgroundColor, hsv)
         assertTrue("Card should retain the artwork color", hsv[1] >= 0.20f)
-        val button = requireNotNull(visuals.primaryControl)
-        Color.colorToHSV(button.getPixel(button.width / 2, button.height / 2), hsv)
+        Color.colorToHSV(visuals.primaryControlColor, hsv)
         assertTrue("Button should retain the artwork color", hsv[1] >= 0.45f)
     }
 

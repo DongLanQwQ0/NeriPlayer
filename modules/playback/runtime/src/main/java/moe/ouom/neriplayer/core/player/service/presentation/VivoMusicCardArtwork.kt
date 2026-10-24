@@ -9,19 +9,23 @@ import android.graphics.LinearGradient
 import android.graphics.RectF
 import android.graphics.Shader
 import androidx.core.graphics.drawable.toBitmap
+import moe.ouom.neriplayer.common.graphics.artworkBoxBlurPass
+import moe.ouom.neriplayer.common.graphics.scaledArtworkBlurRadius
 import moe.ouom.neriplayer.data.model.settings.appearance.VivoMusicIslandAppearance
 
 /** Small, cached bitmaps keep progress-only RemoteViews updates within the Binder budget. */
 internal class VivoMusicCardArtwork(context: Context) {
     private companion object {
-        const val BACKDROP_WIDTH = 320
-        const val BACKDROP_HEIGHT = 180
-        const val SAMPLE_WIDTH = 64
-        const val SAMPLE_HEIGHT = 36
+        const val BACKDROP_WIDTH = 512
+        const val BACKDROP_HEIGHT = 288
+        const val BLUR_REFERENCE_WIDTH = 64
+        const val LOW_BLUR_SAMPLE_WIDTH = 256
+        const val STRONG_BLUR_SAMPLE_WIDTH = 128
         const val BLUR_PASSES = 3
     }
 
     private var source: Bitmap? = null
+    private var backdropSource: Bitmap? = null
     private var initialized = false
     private var appearance = VivoMusicIslandAppearance()
     private var blurredSample: Bitmap? = null
@@ -33,37 +37,53 @@ internal class VivoMusicCardArtwork(context: Context) {
         rounded(context.applicationInfo.loadIcon(context.packageManager).toBitmap(80, 80), 40f)
     }
 
-    fun update(artwork: Bitmap?, appearance: VivoMusicIslandAppearance = VivoMusicIslandAppearance()) {
+    fun update(
+        artwork: Bitmap?,
+        appearance: VivoMusicIslandAppearance = VivoMusicIslandAppearance(),
+        backgroundArtwork: Bitmap? = artwork,
+    ) {
         val next = appearance.normalized()
         val sourceChanged = !initialized || source !== artwork
-        if (!sourceChanged && this.appearance == next) return
+        val backdropChanged = !initialized || backdropSource !== backgroundArtwork
+        if (!sourceChanged && !backdropChanged && this.appearance == next) return
         if (sourceChanged) cover = artwork?.let { rounded(it, it.width * 0.14f) }
-        if (sourceChanged || this.appearance.blurRadius != next.blurRadius) {
+        if (backdropChanged || this.appearance.blurRadius != next.blurRadius) {
             blurredSample?.recycle()
-            blurredSample = artwork?.let { createBlurredSample(it, next.blurRadius) }
+            blurredSample = backgroundArtwork?.let { createBlurredSample(it, next.blurRadius) }
         }
         initialized = true
         source = artwork
+        backdropSource = backgroundArtwork
         this.appearance = next
         background = backdrop(blurredSample, next)
     }
 
     private fun createBlurredSample(artwork: Bitmap, radius: Int): Bitmap {
-        val sample = croppedSample(artwork, Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
-        if (radius == 0) return sample
-        val pixels = IntArray(SAMPLE_WIDTH * SAMPLE_HEIGHT)
-        val scratch = IntArray(pixels.size)
-        sample.getPixels(pixels, 0, SAMPLE_WIDTH, 0, 0, SAMPLE_WIDTH, SAMPLE_HEIGHT)
-        repeat(BLUR_PASSES) {
-            blurAxis(pixels, scratch, horizontal = true, radius)
-            blurAxis(scratch, pixels, horizontal = false, radius)
+        // Zero blur crops directly at output resolution. Weak blur retains fine detail;
+        // stronger blur can use fewer pixels without exposing a coarse sampling grid.
+        val width = when (radius) {
+            0 -> BACKDROP_WIDTH
+            in 1..3 -> LOW_BLUR_SAMPLE_WIDTH
+            else -> STRONG_BLUR_SAMPLE_WIDTH
         }
-        sample.setPixels(pixels, 0, SAMPLE_WIDTH, 0, 0, SAMPLE_WIDTH, SAMPLE_HEIGHT)
+        val height = width * BACKDROP_HEIGHT / BACKDROP_WIDTH
+        val sample = croppedSample(artwork, width, height)
+        if (radius == 0) return sample
+        val scaledRadius = scaledArtworkBlurRadius(radius, width.toFloat() / BLUR_REFERENCE_WIDTH)
+        val pixels = IntArray(width * height)
+        val scratch = IntArray(pixels.size)
+        sample.getPixels(pixels, 0, width, 0, 0, width, height)
+        repeat(BLUR_PASSES) {
+            artworkBoxBlurPass(pixels, width, height, scaledRadius, horizontal = true, output = scratch)
+            artworkBoxBlurPass(scratch, width, height, scaledRadius, horizontal = false, output = pixels)
+        }
+        sample.setPixels(pixels, 0, width, 0, 0, width, height)
         return sample
     }
 
     private fun backdrop(sample: Bitmap?, appearance: VivoMusicIslandAppearance): Bitmap =
         Bitmap.createBitmap(BACKDROP_WIDTH, BACKDROP_HEIGHT, Bitmap.Config.ARGB_8888).also { result ->
+            result.setHasAlpha(false)
             val canvas = Canvas(result)
             canvas.drawColor(Color.rgb(23, 26, 32))
             val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
@@ -78,36 +98,19 @@ internal class VivoMusicCardArtwork(context: Context) {
             canvas.drawRect(0f, 0f, BACKDROP_WIDTH.toFloat(), BACKDROP_HEIGHT.toFloat(), paint)
         }
 
-    private fun croppedSample(artwork: Bitmap, paint: Paint): Bitmap =
-        Bitmap.createBitmap(SAMPLE_WIDTH, SAMPLE_HEIGHT, Bitmap.Config.ARGB_8888).also { sample ->
-            val scale = maxOf(SAMPLE_WIDTH.toFloat() / artwork.width, SAMPLE_HEIGHT.toFloat() / artwork.height)
+    private fun croppedSample(artwork: Bitmap, sampleWidth: Int, sampleHeight: Int): Bitmap =
+        Bitmap.createBitmap(sampleWidth, sampleHeight, Bitmap.Config.ARGB_8888).also { sample ->
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+            val scale = maxOf(sampleWidth.toFloat() / artwork.width, sampleHeight.toFloat() / artwork.height)
             val width = artwork.width * scale
             val height = artwork.height * scale
-            val left = (SAMPLE_WIDTH - width) / 2f
-            val top = (SAMPLE_HEIGHT - height) / 2f
+            val left = (sampleWidth - width) / 2f
+            val top = (sampleHeight - height) / 2f
             Canvas(sample).apply {
                 drawColor(Color.rgb(23, 26, 32))
                 drawBitmap(artwork, null, RectF(left, top, left + width, top + height), paint)
             }
         }
-
-    private fun blurAxis(input: IntArray, output: IntArray, horizontal: Boolean, radius: Int) {
-        val count = radius * 2 + 1
-        for (y in 0 until SAMPLE_HEIGHT) for (x in 0 until SAMPLE_WIDTH) {
-            var red = 0
-            var green = 0
-            var blue = 0
-            for (offset in -radius..radius) {
-                val sx = if (horizontal) (x + offset).coerceIn(0, SAMPLE_WIDTH - 1) else x
-                val sy = if (horizontal) y else (y + offset).coerceIn(0, SAMPLE_HEIGHT - 1)
-                val color = input[sy * SAMPLE_WIDTH + sx]
-                red += Color.red(color)
-                green += Color.green(color)
-                blue += Color.blue(color)
-            }
-            output[y * SAMPLE_WIDTH + x] = Color.rgb(red / count, green / count, blue / count)
-        }
-    }
 
     private fun rounded(bitmap: Bitmap, radius: Float): Bitmap =
         Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888).also {

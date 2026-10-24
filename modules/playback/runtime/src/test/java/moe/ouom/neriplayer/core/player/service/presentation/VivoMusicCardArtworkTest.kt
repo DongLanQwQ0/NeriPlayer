@@ -15,6 +15,8 @@ import java.io.File
 import kotlin.math.abs
 import moe.ouom.neriplayer.feature.player.R
 import moe.ouom.neriplayer.data.model.settings.appearance.VivoMusicIslandAppearance
+import moe.ouom.neriplayer.common.graphics.artworkBoxBlurPass
+import moe.ouom.neriplayer.common.graphics.scaledArtworkBlurRadius
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
@@ -47,17 +49,17 @@ class VivoMusicCardArtworkTest {
         val source = splitCover(vertical = true)
         renderer.update(source)
         val background = renderer.background!!
-        assertEquals(320, background.width)
-        assertEquals(180, background.height)
+        assertEquals(512, background.width)
+        assertEquals(288, background.height)
         assertTrue(Color.red(background.getPixel(60, 90)) > Color.blue(background.getPixel(60, 90)))
-        assertTrue(Color.blue(background.getPixel(260, 90)) > Color.red(background.getPixel(260, 90)))
+        assertTrue(Color.blue(background.getPixel(420, 144)) > Color.red(background.getPixel(420, 144)))
         assertEquals(Color.RED, source.getPixel(10, 10))
         assertEquals(Color.BLUE, source.getPixel(150, 10))
 
         renderer.update(splitCover(vertical = false))
         assertNotSame(background, renderer.background)
-        assertTrue(Color.red(renderer.background!!.getPixel(160, 20)) > Color.blue(renderer.background!!.getPixel(160, 20)))
-        assertTrue(Color.blue(renderer.background!!.getPixel(160, 160)) > Color.red(renderer.background!!.getPixel(160, 160)))
+        assertTrue(Color.red(renderer.background!!.getPixel(256, 20)) > Color.blue(renderer.background!!.getPixel(256, 20)))
+        assertTrue(Color.blue(renderer.background!!.getPixel(256, 260)) > Color.red(renderer.background!!.getPixel(256, 260)))
     }
 
     @Test
@@ -65,7 +67,7 @@ class VivoMusicCardArtworkTest {
         val renderer = renderer()
         renderer.update(splitCover(vertical = true, first = Color.WHITE, second = Color.BLACK))
         val bitmap = renderer.background!!
-        val row = (120..200).map { Color.red(bitmap.getPixel(it, 90)) }
+        val row = (192..320).map { Color.red(bitmap.getPixel(it, 144)) }
         assertTrue(row.any { it in 5..30 })
         assertTrue(row.zipWithNext().all { (a, b) -> abs(a - b) <= 5 })
         assertTrue(Color.red(bitmap.getPixel(10, 10)) in 110..125)
@@ -145,11 +147,67 @@ class VivoMusicCardArtworkTest {
         val sharp = renderer.background!!
         renderer.update(source, defaults.copy(maskOpacityPercent = 0, blurRadius = 12))
         val blurred = renderer.background!!
-        val sharpTransition = (0 until 320).count { Color.red(sharp.getPixel(it, 90)) in 10..245 }
-        val blurredTransition = (0 until 320).count { Color.red(blurred.getPixel(it, 90)) in 10..245 }
+        val sharpTransition = (0 until sharp.width).count { Color.red(sharp.getPixel(it, 144)) in 10..245 }
+        val blurredTransition = (0 until blurred.width).count { Color.red(blurred.getPixel(it, 144)) in 10..245 }
         assertTrue("Blur radius did not change the transition width", blurredTransition > sharpTransition + 30)
         assertSame(cover, renderer.cover)
         assertEquals(Color.WHITE, source.getPixel(10, 10))
+    }
+
+    @Test fun `zero blur retains pixel details from the high resolution artwork instead of the notification thumbnail`() {
+        val renderer = renderer()
+        val full = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888).apply {
+            for (x in 0 until width) for (y in 0 until height) {
+                setPixel(x, y, if (x % 4 < 2) Color.WHITE else Color.BLACK)
+            }
+        }
+        val thumbnail = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.RED) }
+        renderer.update(thumbnail, VivoMusicIslandAppearance(0, 0), backgroundArtwork = full)
+        val clear = renderer.background!!
+        for (x in 0 until 512) assertEquals(full.getPixel(x, 256), clear.getPixel(x, 144))
+        assertEquals(Color.RED, renderer.cover!!.getPixel(128, 128))
+        val sample = renderer.javaClass.getDeclaredField("blurredSample").apply { isAccessible = true }
+        val cropped = sample.get(renderer)
+        renderer.update(thumbnail, VivoMusicIslandAppearance(30, 0), backgroundArtwork = full)
+        assertSame(cropped, sample.get(renderer))
+        assertTrue(!clear.isRecycled && !full.isRecycled && !thumbnail.isRecycled)
+        renderer.update(thumbnail, VivoMusicIslandAppearance(30, 1), backgroundArtwork = full)
+        assertEquals(256, (sample.get(renderer) as Bitmap).width)
+        renderer.update(thumbnail, VivoMusicIslandAppearance(30, 12), backgroundArtwork = full)
+        assertEquals(128, (sample.get(renderer) as Bitmap).width)
+    }
+
+    @Test fun `weak blur closely matches an output resolution reference and grows smoothly with radius`() {
+        val renderer = renderer()
+        val source = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888).apply {
+            for (y in 0 until height) for (x in 0 until width) {
+                setPixel(x, y, if ((x / 48 + y / 48) % 2 == 0) Color.WHITE else Color.BLACK)
+            }
+        }
+        renderer.update(source, VivoMusicIslandAppearance(0, 1))
+        val actual = renderer.background!!
+        var reference = IntArray(512 * 288)
+        source.getPixels(reference, 0, 512, 0, 112, 512, 288)
+        val radius = scaledArtworkBlurRadius(1, 8f)
+        repeat(3) {
+            reference = artworkBoxBlurPass(reference, 512, 288, radius, horizontal = true)
+            reference = artworkBoxBlurPass(reference, 512, 288, radius, horizontal = false)
+        }
+        var error = 0.0
+        for (y in 0 until 288) for (x in 0 until 512) {
+            error += abs(Color.red(actual.getPixel(x, y)) - Color.red(reference[y * 512 + x]))
+        }
+        assertTrue("Weak blur mean channel error = ${error / reference.size}", error / reference.size < 5)
+
+        val split = splitCover(true, Color.WHITE, Color.BLACK)
+        var lastWidth = -1
+        for (setting in 0..12) {
+            renderer.update(split, VivoMusicIslandAppearance(0, setting))
+            val bitmap = renderer.background!!
+            val transitionWidth = (0 until bitmap.width).count { Color.red(bitmap.getPixel(it, 144)) in 10..245 }
+            assertTrue("Blur contracted at $setting", transitionWidth > lastWidth)
+            lastWidth = transitionWidth
+        }
     }
 
     @Test

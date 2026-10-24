@@ -18,6 +18,7 @@ import android.view.ViewGroup
 import android.widget.RemoteViews
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
+import java.util.IdentityHashMap
 import moe.ouom.neriplayer.core.player.service.notification.StatusBarLyricNotificationState
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.feature.player.R
@@ -48,6 +49,40 @@ class VivoMusicAnimatedCardTest {
     )
     private val open get() = PendingIntent.getBroadcast(context, 1, Intent("test.OPEN").setPackage(context.packageName),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+
+    @Test
+    @Config(qualifiers = "xxhdpi")
+    fun `high detail unblurred crossfade keeps both notification documents within the transaction budget`() {
+        val bridge = VivoMusicIslandBridge(context)
+        bridge.javaClass.getDeclaredField("appearance").apply { isAccessible = true }.set(bridge,
+            moe.ouom.neriplayer.data.model.settings.appearance.VivoMusicIslandAppearance(0, 0))
+        val card = bridge.javaClass.getDeclaredMethod("card", PlaybackServiceNotificationRenderInputs::class.java,
+            PendingIntent::class.java, Boolean::class.javaPrimitiveType, VivoMusicBackdropTransition.Frame::class.java)
+            .apply { isAccessible = true }
+        fun artwork(seed: Int): Bitmap {
+            val random = kotlin.random.Random(seed)
+            return Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888).apply {
+                val pixels = IntArray(512 * 512) { 0xff000000.toInt() or random.nextInt(0x1000000) }
+                setPixels(pixels, 0, 512, 0, 0, 512, 512)
+            }
+        }
+        val thumbnails = IdentityHashMap<Bitmap, Bitmap>()
+        fun document(art: Bitmap, cameraSafe: Boolean) = card.invoke(bridge,
+            inputs.copy(artwork = thumbnails.getOrPut(art) { Bitmap.createScaledBitmap(art, 256, 256, true) },
+                backgroundArtwork = art), open, cameraSafe, null) as RemoteViews
+        document(artwork(1), false)
+        val next = artwork(2)
+        val bundle = android.os.Bundle().apply {
+            putParcelable("notification", document(next, false))
+            putParcelable("island", document(next, true))
+        }
+        val parcel = android.os.Parcel.obtain()
+        try {
+            bundle.writeToParcel(parcel, 0)
+            println("unblurred crossfade documents bytes=${parcel.dataSize()}")
+            assertTrue("Crossfade exceeds the Binder transaction budget: ${parcel.dataSize()}", parcel.dataSize() < 900_000)
+        } finally { parcel.recycle(); bridge.clear() }
+    }
 
     @Test fun `vivo notification sends a transparent bitmap glyph instead of an adaptive icon resource`() {
         val manufacturer = Build.MANUFACTURER
@@ -110,7 +145,10 @@ class VivoMusicAnimatedCardTest {
             .invoke(bridge, inputs, open, false) as RemoteViews
         val renderer = VivoMusicAnimatedCard(context)
         fun document(color: Int): RemoteViews {
-            val background = Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888).apply { eraseColor(color) }
+            val background = Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888).apply {
+                setHasAlpha(false)
+                eraseColor(color)
+            }
             return renderer.render(xml, inputs, renderer.prepareBackground(background), false,
                 VivoMusicProgressMotion.Frame(0.1f, 0.1f, 0L, false), emptyMap(), emptyList())
         }
@@ -126,13 +164,18 @@ class VivoMusicAnimatedCardTest {
             view.draw(Canvas(bitmap))
             return bitmap.getPixel(5, 5).also { bitmap.recycle() }
         }
-        assertEquals(android.graphics.Color.RED, pixel())
+        fun assertColor(expected: Int, actual: Int) {
+            assertEquals(255, android.graphics.Color.alpha(actual))
+            for (shift in listOf(0, 8, 16)) assertTrue("JPEG changed the solid background color",
+                kotlin.math.abs((expected ushr shift and 255) - (actual ushr shift and 255)) <= 3)
+        }
+        assertColor(android.graphics.Color.RED, pixel())
         val delivered = document(android.graphics.Color.BLUE)
         // Notification transport/host inflation can take longer than the fade itself. The
         // visible host keeps drawing the old document while the replacement is in transit.
         Thread.sleep(450)
         ShadowSystemClock.advanceBy(Duration.ofMillis(450))
-        assertEquals(android.graphics.Color.RED, pixel())
+        assertColor(android.graphics.Color.RED, pixel())
         delivered.reapply(activity, view)
         val first = pixel()
         Thread.sleep(120)
@@ -144,7 +187,7 @@ class VivoMusicAnimatedCardTest {
         println("background host frames: ${Integer.toHexString(first)}, ${Integer.toHexString(middle)}, ${Integer.toHexString(after)}")
         assertTrue("Background switched on its first frame", android.graphics.Color.red(first) > android.graphics.Color.blue(first))
         assertTrue("Background had no blended intermediate frame", android.graphics.Color.red(middle) > 15 && android.graphics.Color.blue(middle) > 15)
-        assertEquals(android.graphics.Color.BLUE, after)
+        assertColor(android.graphics.Color.BLUE, after)
         activity.finish()
         renderer.clear()
         bridge.clear()

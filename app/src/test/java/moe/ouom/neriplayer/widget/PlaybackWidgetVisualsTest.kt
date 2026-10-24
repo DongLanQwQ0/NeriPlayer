@@ -5,11 +5,13 @@ import android.graphics.Color
 import androidx.core.graphics.createBitmap
 import androidx.core.graphics.get
 import androidx.core.graphics.set
+import moe.ouom.neriplayer.common.graphics.artworkBoxBlurPass
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -21,16 +23,16 @@ import kotlin.math.abs
 class PlaybackWidgetVisualsTest {
 
     @Test
-    fun `blur source is a tiny crop matching the widget aspect`() {
+    fun `blur source retains enough samples and matches the widget aspect`() {
         val artwork = solidBitmap(192, 192, Color.RED)
 
         val wide = playbackWidgetBlurSource(artwork, targetWidth = 1024, targetHeight = 512)
         val tall = playbackWidgetBlurSource(artwork, targetWidth = 300, targetHeight = 600)
         val square = playbackWidgetBlurSource(artwork, targetWidth = 480, targetHeight = 480)
 
-        assertEquals(40 to 20, wide.width to wide.height)
-        assertEquals(20 to 40, tall.width to tall.height)
-        assertEquals(40 to 40, square.width to square.height)
+        assertEquals(160 to 80, wide.width to wide.height)
+        assertEquals(80 to 160, tall.width to tall.height)
+        assertEquals(160 to 160, square.width to square.height)
         assertEquals(Color.RED, square[20, 20])
         assertEquals(192, artwork.width)
         assertTrue(!artwork.isRecycled)
@@ -81,8 +83,8 @@ class PlaybackWidgetVisualsTest {
         val white = Color.WHITE
         val row = intArrayOf(white, black, black, black, white)
 
-        val horizontal = boxBlurPass(row, width = 5, height = 1, radius = 1, horizontal = true)
-        val vertical = boxBlurPass(row, width = 1, height = 5, radius = 1, horizontal = false)
+        val horizontal = artworkBoxBlurPass(row, width = 5, height = 1, radius = 1, horizontal = true)
+        val vertical = artworkBoxBlurPass(row, width = 1, height = 5, radius = 1, horizontal = false)
 
         val twoThirds = 0xFF * 2 / 3
         val oneThird = 0xFF / 3
@@ -99,7 +101,7 @@ class PlaybackWidgetVisualsTest {
 
         assertNull(light.artwork)
         assertNull(light.compactArtwork)
-        assertNull(light.primaryControl)
+        assertEquals(255, Color.alpha(light.primaryControlColor))
         assertEquals(light.textPrimary, light.controlTint)
         assertEquals(Color.rgb(12, 24, 18), light.primaryControlTint)
         assertTrue(luminance(light.backgroundColor) > luminance(dark.backgroundColor))
@@ -116,11 +118,21 @@ class PlaybackWidgetVisualsTest {
         assertNotNull(compact)
         assertEquals(192 to 192, compact!!.width to compact.height)
         assertEquals(192 to 192, visuals.artwork!!.width to visuals.artwork!!.height)
-        assertEquals(96 to 96, visuals.primaryControl!!.width to visuals.primaryControl!!.height)
+        assertEquals(255, Color.alpha(visuals.primaryControlColor))
         assertEquals(0, Color.alpha(visuals.artwork!![0, 0]))
         val background = visuals.backgroundColor
         assertTrue(Color.red(background) > Color.green(background))
         assertNotEquals(buildPlaybackWidgetVisuals(null).backgroundColor, background)
+    }
+
+    @Test fun `compact backdrop caches full density surfaces across playback state updates`() {
+        val cover = solidBitmap(192, 192, Color.RED)
+        val visuals = buildPlaybackWidgetVisuals(cover)
+        val size = PlaybackWidgetSize(260, 188)
+        val backdrop = visuals.compactBackdrop(cover, size, 24f, 3.125f)
+        assertEquals(813 to 588, backdrop.width to backdrop.height)
+        repeat(20) { assertSame(backdrop, visuals.compactBackdrop(cover, size, 24f, 3.125f)) }
+        assertTrue(!cover.isRecycled)
     }
 
     @Test

@@ -57,7 +57,7 @@ internal fun VivoMusicIslandSettings(repository: SettingsRepository) {
     val artwork by produceState<Bitmap?>(null, coverSource) {
         value = null
         if (!coverSource.isNullOrBlank()) {
-            val request = ImageRequest.Builder(context).data(coverSource).size(256).allowHardware(false).build()
+            val request = ImageRequest.Builder(context).data(coverSource).size(512).allowHardware(false).build()
             value = Coil.imageLoader(context).execute(request).drawable?.toBitmap()
         }
     }

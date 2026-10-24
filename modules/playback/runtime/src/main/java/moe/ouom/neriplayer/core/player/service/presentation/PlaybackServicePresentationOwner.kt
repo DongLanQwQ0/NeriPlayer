@@ -261,6 +261,7 @@ internal class PlaybackServicePresentationOwner(
             floatingLyricsEnabled = floatingLyricsEnabled,
             lyricState = lyricState,
             artwork = artworkSnapshot.notificationBitmap,
+            backgroundArtwork = artworkSnapshot.mediaBitmap,
             shareUrl = null,
             positionMs = servicePlaybackPositionMs(playback),
             lyricLine = source.metadata().payload.lyric,

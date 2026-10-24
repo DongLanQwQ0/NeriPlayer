@@ -231,7 +231,7 @@ internal class VivoMusicIslandBridge(private val context: Context) {
         val artist = song.displayArtist()
         progressMotion.update(song.stableKey(), inputs.durationMs, inputs.positionMs,
             inputs.playbackControlPlaying && !inputs.audioRouteMuted, SystemClock.elapsedRealtime())
-        cardArtwork.update(inputs.artwork, appearance)
+        cardArtwork.update(inputs.artwork, appearance, inputs.backgroundArtwork)
         val backdrop = if (VivoMusicAnimatedCard.supported())
             animatedCard.prepareBackground(checkNotNull(cardArtwork.background)) else null
         val open = openIntent
@@ -311,7 +311,7 @@ internal class VivoMusicIslandBridge(private val context: Context) {
             setTextViewText(R.id.vivo_music_artist,
                 inputs.lyricLine?.takeIf { it.isNotBlank() } ?: song.displayArtist())
             setOnClickPendingIntent(R.id.vivo_music_card, open)
-        cardArtwork.update(inputs.artwork, appearance)
+        cardArtwork.update(inputs.artwork, appearance, inputs.backgroundArtwork)
             setImageViewBitmap(R.id.vivo_music_backdrop, cardArtwork.background)
             setImageViewBitmap(R.id.vivo_music_app, cardArtwork.appIcon)
             setContentDescription(R.id.vivo_music_app, context.getString(CommonR.string.app_name))
