@@ -21,7 +21,6 @@ import androidx.compose.remote.core.operations.layout.managers.ColumnLayout
 import androidx.compose.remote.core.operations.layout.managers.RowLayout
 import androidx.compose.remote.core.operations.Utils
 import androidx.compose.remote.core.semantics.AccessibleComponent
-import androidx.compose.remote.core.semantics.CoreSemantics
 import androidx.compose.remote.core.operations.utilities.AnimatedFloatExpression.*
 import androidx.compose.remote.creation.RemoteComposeWriter
 import androidx.compose.remote.creation.actions.Action
@@ -117,7 +116,7 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
                 val label = writer.addText(description)
                 modifier.then(RecordingModifier.Element { instructions ->
                     instructions.addSemanticsModifier(label, AccessibleComponent.Role.BUTTON.ordinal.toByte(),
-                        0, 0, CoreSemantics.Mode.SET.ordinal, true, true)
+                        0, 0, AccessibleComponent.Mode.SET.ordinal, true, true)
                 })
             }
             writer.startCanvas(modifier)
