@@ -183,8 +183,9 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
             writer.drawRoundRect(progress.left, progress.top, right, progress.bottom, progress.height() / 2, progress.height() / 2)
             val elapsedBounds = surface.bounds.getValue(R.id.vivo_music_elapsed)
             writer.rcPaint.setColor(0xffb8bdc4.toInt()).setTextSize(surface.elapsedSize).commit()
-            writer.drawTextAnchored(formatPlaybackWidgetTime(inputs.positionMs.coerceIn(0L, inputs.durationMs)).padStart(5, '0'),
-                elapsedBounds.left, surface.elapsedBaseline, -1f, 1f, 0)
+            val elapsedText = formatPlaybackWidgetTime(inputs.positionMs.coerceIn(0L, inputs.durationMs)).padStart(5, '0')
+            writer.drawTextRun(elapsedText, 0, elapsedText.length, 0, elapsedText.length,
+                elapsedBounds.left, surface.elapsedBaseline, false)
         }
         writer.endCanvas()
         writer.endBox()

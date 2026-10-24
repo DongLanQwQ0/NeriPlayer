@@ -75,6 +75,20 @@ class VivoMusicAnimatedCardTest {
             output.parentFile!!.mkdirs()
             output.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
             val result = (bounds.left until bounds.right).count { bitmap.getPixel(it, bounds.centerY()) == 0xffe8eaed.toInt() }
+            if (name == "before") {
+                fun textRows(id: Int): IntRange {
+                    val text = layout.findViewById<View>(id)
+                    val rect = Rect(0, 0, text.width, text.height)
+                    layout.offsetDescendantRectToMyCoords(text, rect)
+                    val rows = ((bounds.centerY() - 13)..(bounds.centerY() + 13)).filter { y ->
+                        (rect.left until rect.right).any { x -> android.graphics.Color.red(bitmap.getPixel(x, y)) > 80 }
+                    }
+                    return rows.first()..rows.last()
+                }
+                assertEquals("Elapsed and duration labels lost their common baseline",
+                    textRows(R.id.vivo_music_duration), textRows(R.id.vivo_music_elapsed))
+            }
+            println("$name=$result")
             bitmap.recycle()
             return result
         }
