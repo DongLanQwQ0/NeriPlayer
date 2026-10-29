@@ -2,6 +2,7 @@ name: Vivo upstream releases
 
 on:
   schedule:
+    # Poll published Releases only; ordinary upstream commits never enter merge/build.
     - cron: '17,47 * * * *'
   workflow_dispatch:
 
@@ -14,6 +15,7 @@ concurrency:
 
 jobs:
   discover:
+    name: Detect upstream Release (no APK build)
     if: github.repository == 'DongLanQwQ0/NeriPlayer'
     runs-on: ubuntu-latest
     outputs:
@@ -54,6 +56,8 @@ jobs:
           UPSTREAM_SHA: ${{ needs.discover.outputs.sha }}
         run: |
           python3 .github/scripts/vivo_upstream.py merge "$UPSTREAM_SHA"
+          # Imported upstream workflows must not re-enable push/PR builds in this fork.
+          python3 -B -m unittest discover -s .github/scripts -p 'test_vivo_upstream.py'
           git push origin HEAD:refs/heads/master
 
   build:

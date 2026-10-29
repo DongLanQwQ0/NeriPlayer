@@ -1,9 +1,13 @@
 import os
+from http.client import RemoteDisconnected
+import io
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import unittest
+import re
+from urllib.error import HTTPError
 from unittest.mock import patch
 
 import vivo_upstream as follow
@@ -17,6 +21,34 @@ def release(number=follow.FIRST_RELEASE_ID + 1):
 class UpstreamReleaseTests(unittest.TestCase):
     def test_no_release_means_no_commit_build(self):
         self.assertIsNone(follow.pending_release([], []))
+
+    def test_api_disconnect_retries_without_skipping_a_release(self):
+        response = lambda: io.StringIO('[{"id": 123}]')
+        with patch.object(follow.urllib.request, "urlopen", side_effect=[RemoteDisconnected(), response()]) as request, \
+                patch.object(follow.time, "sleep") as sleep:
+            self.assertEqual([{"id": 123}], follow.release_page(object()))
+        self.assertEqual(2, request.call_count)
+        sleep.assert_called_once_with(1)
+
+    def test_api_retry_is_bounded_and_denied_permissions_are_not_retried(self):
+        for failure, attempts in ((RemoteDisconnected(), 3), (HTTPError("url", 403, "Denied", {}, None), 1)):
+            with self.subTest(failure=failure), patch.object(follow.urllib.request, "urlopen", side_effect=failure) as request, \
+                    patch.object(follow.time, "sleep"):
+                with self.assertRaises(type(failure)):
+                    follow.release_page(object())
+                self.assertEqual(attempts, request.call_count)
+            if isinstance(failure, HTTPError):
+                failure.close()
+
+    def test_transient_api_error_retries_and_other_http_errors_fail_immediately(self):
+        for status, attempts in ((502, 3), (404, 1)):
+            failure = HTTPError("url", status, "Failure", {}, None)
+            with self.subTest(status=status), patch.object(follow.urllib.request, "urlopen", side_effect=failure) as request, \
+                    patch.object(follow.time, "sleep"):
+                with self.assertRaises(HTTPError):
+                    follow.release_page(object())
+                self.assertEqual(attempts, request.call_count)
+            failure.close()
 
     def test_old_and_draft_releases_are_not_enrolled(self):
         draft = release()
@@ -125,6 +157,32 @@ class UpstreamReleaseTests(unittest.TestCase):
             self.assertEqual("adaptation\n", Path(directory, "vivo.txt").read_text(encoding="utf-8"))
             self.assertEqual("release\n", Path(directory, "upstream.txt").read_text(encoding="utf-8"))
             self.assertEqual([fork, upstream], local_git("show", "-s", "--format=%P", "HEAD").split())
+
+
+class WorkflowTriggerTests(unittest.TestCase):
+    def test_only_the_upstream_release_detector_is_automatic(self):
+        folder = Path(__file__).resolve().parents[1] / "workflows"
+        for path in sorted(folder.glob("*.yml")):
+            with self.subTest(workflow=path.name):
+                text = path.read_text(encoding="utf-8")
+                block = re.search(r"^on:\n(.*?)(?=^\S)", text, re.MULTILINE | re.DOTALL)
+                self.assertIsNotNone(block, "Expected an explicit top-level trigger mapping")
+                events = set(re.findall(r"^  ([a-z_]+):", block.group(1), re.MULTILINE))
+                expected = {"schedule", "workflow_dispatch"} if path.name == "vivo_upstream.yml" else {"workflow_dispatch"}
+                self.assertEqual(expected, events)
+
+    def test_build_and_publish_require_a_real_pending_release_and_successful_merge(self):
+        folder = Path(__file__).resolve().parents[1] / "workflows"
+        text = (folder / "vivo_upstream.yml").read_text(encoding="utf-8")
+        self.assertIn("if: needs.discover.outputs.has_release == 'true'", text)
+        self.assertIn("needs: [discover, merge]", text)
+        self.assertIn("needs: [discover, merge, build]", text)
+        checks = "python3 -B -m unittest discover -s .github/scripts -p 'test_vivo_upstream.py'"
+        merge = text.split("  merge:\n", 1)[1].split("  build:\n", 1)[0]
+        self.assertLess(merge.index(checks), merge.index("git push origin"))
+        android = (folder / "android_ci.yml").read_text(encoding="utf-8")
+        self.assertNotIn("  build:\n", android)
+        self.assertNotIn("  upload-telegram:\n", android)
 
 
 class SigningPinTests(unittest.TestCase):
