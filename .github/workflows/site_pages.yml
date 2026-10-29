@@ -1,12 +1,7 @@
 name: NeriPlayer Website
 
 on:
-  push:
-    branches:
-      - master
-    paths:
-      - 'site/**'
-      - '.github/workflows/site_pages.yml'
+  # APK automation is owned by vivo_upstream.yml and gated on a published upstream Release.
   workflow_dispatch:
 
 permissions:

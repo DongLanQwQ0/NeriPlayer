@@ -60,6 +60,8 @@ internal data class PlaybackServiceNotificationRenderInputs(
     val lyricLine: String? = null,
     val durationMs: Long = song?.durationMs ?: 0L,
     val backgroundArtwork: Bitmap? = artwork,
+    val playbackSpeed: Float = 0f,
+    val positionUpdatedAtMs: Long = 0L,
 )
 
 internal fun createPlaybackNotificationIcon(context: Context): Icon =

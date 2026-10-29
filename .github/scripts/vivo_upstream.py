@@ -1,11 +1,14 @@
 """Merge new upstream Releases into the fork, then build and publish its release variant."""
 
 import argparse
+from http.client import RemoteDisconnected
 import json
 import os
 from pathlib import Path
 import re
 import subprocess
+import time
+from urllib.error import HTTPError, URLError
 import urllib.request
 import zipfile
 
@@ -33,12 +36,27 @@ def releases(repository):
             headers={"Authorization": f"Bearer {os.environ['GH_TOKEN']}",
                      "Accept": "application/vnd.github+json", "User-Agent": "NeriPlayer-vivo-release"},
         )
-        with urllib.request.urlopen(request, timeout=60) as response:
-            batch = json.load(response)
+        batch = release_page(request)
         result.extend(batch)
         if len(batch) < 100:
             return result
         page += 1
+
+
+def release_page(request):
+    """Retry transient API disconnects, never authentication/permission failures."""
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                return json.load(response)
+        except (URLError, RemoteDisconnected, TimeoutError) as failure:
+            if isinstance(failure, HTTPError) and failure.code not in {429, 500, 502, 503, 504}:
+                raise
+            if attempt == 2:
+                raise
+            if isinstance(failure, HTTPError):
+                failure.close()
+            time.sleep(2 ** attempt)
 
 
 def pending_release(own, upstream):

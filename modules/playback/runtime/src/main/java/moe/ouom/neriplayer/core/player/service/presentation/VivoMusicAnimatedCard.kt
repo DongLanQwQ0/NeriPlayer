@@ -39,6 +39,7 @@ import moe.ouom.neriplayer.core.player.service.notification.notificationSeekPosi
 import moe.ouom.neriplayer.core.player.service.notification.StatusBarLyricNotificationState
 import moe.ouom.neriplayer.data.identity.stableKey
 import moe.ouom.neriplayer.data.local.media.displayArtist
+import moe.ouom.neriplayer.core.player.metadata.ExternalLyricWindow
 
 /** Keeps the existing XML design; only motion and hit regions are drawn by the system renderer. */
 @RequiresApi(35)
@@ -63,6 +64,12 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
     private val backdropFrames = mutableMapOf<Boolean, VivoMusicBackdropTransition.Frame>()
     private val lyricTransitions = mutableMapOf<Boolean, VivoMusicLyricTransition>()
     private val lyricFrames = mutableMapOf<Boolean, VivoMusicLyricTransition.Frame>()
+    private data class ContentMotion(val cover: VivoMusicLayerMotion, val title: VivoMusicLayerMotion,
+        val artist: VivoMusicLayerMotion, var songKey: String? = null)
+    private val contentMotions = mutableMapOf<Boolean, ContentMotion>()
+    private val contentFrames = mutableMapOf<Boolean, List<VivoMusicLayerMotion.Frame>>()
+    private val playMotions = mutableMapOf<Boolean, VivoMusicToggleMotion>()
+    fun previewPlaying(playing: Boolean, now: Long) { playMotions.values.forEach { it.update(playing, now) } }
     private val platform = object : RcPlatformServices by RcPlatformServices.None {
         override fun getImageWidth(image: Any) = (image as Bitmap).width
         override fun getImageHeight(image: Any) = (image as Bitmap).height
@@ -87,9 +94,10 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
         actions: Map<Int, PendingIntent>,
         seeks: List<PendingIntent>,
         now: Long = SystemClock.elapsedRealtime(),
+        lyrics: ExternalLyricWindow? = null,
     ): RemoteViews {
         // Progress-only changes do not inflate XML, redraw artwork, or compress bitmaps again.
-        val key = inputs.copy(positionMs = 0L, backgroundArtwork = null, lyricLine = null,
+        val key = inputs.copy(positionMs = 0L, backgroundArtwork = null, lyricLine = null, playbackSpeed = 0f, positionUpdatedAtMs = 0L,
             text = "", lyricState = StatusBarLyricNotificationState(false, null))
         val surface = surfaces[cameraSafe]?.takeIf {
             it.key == key && it.configuration == context.resources.configuration.hashCode()
@@ -97,22 +105,33 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
             surfaces.put(cameraSafe, next)?.let { old ->
                 (listOf(old.bitmap) + old.icons.values.flatten()).forEach { encodedImages.remove(it) }
                 if (old.bitmap.width != next.bitmap.width || old.bitmap.height != next.bitmap.height ||
-                    old.configuration != next.configuration) lyricTransitions.remove(cameraSafe)
+                    old.configuration != next.configuration) {
+                    lyricTransitions.remove(cameraSafe)
+                    contentMotions.remove(cameraSafe)
+                }
             }
         }
         val width = surface.bitmap.width
         val height = surface.bitmap.height
         val backdrop = background(width, height)
         backdropFrames[cameraSafe] = backdrop
-        val lyricLine = inputs.lyricLine?.takeIf { it.isNotBlank() }
-        val lyricText = lyricLine ?: checkNotNull(inputs.song).displayArtist()
+        val song = checkNotNull(inputs.song)
+        val songKey = song.stableKey()
+        val lyricLine = if (lyrics == null) inputs.lyricLine?.takeIf { it.isNotBlank() } else lyrics.current
+        val lyricText = lyricLine ?: song.displayArtist()
+        val speed = inputs.playbackSpeed.takeIf { inputs.playbackControlPlaying && !inputs.audioRouteMuted && it > 0f }
+        val nextLyric = if (speed != null && lyrics?.nextPositionMs != null) lyrics.next ?: song.displayArtist() else null
+        val boundaryMs = if (speed != null && lyrics?.nextPositionMs != null)
+            (lyrics.nextPositionMs - lyrics.positionMs) / speed else 0f
+        val lyricDurationMs = if (speed != null && lyrics != null)
+            minOf(VivoMusicLyricTransition.DURATION_MS.toFloat(), lyrics.intervalMs / speed / 2f) else 0f
         val padding = (8 * context.resources.displayMetrics.density).roundToInt()
         val lyric = lyricTransitions.getOrPut(cameraSafe) {
             VivoMusicLyricTransition(context.resources.displayMetrics.density)
-        }.update(checkNotNull(inputs.song).stableKey(), lyricText, lyricLine != null, now,
-            surface.lyricView.currentTextColor) {
+        }.prepare(songKey, lyricText, nextLyric, boundaryMs, lyricDurationMs,
+            surface.lyricView.currentTextColor) { text ->
             val view = surface.lyricView
-            view.text = lyricText
+            view.text = text
             val rect = surface.bounds.getValue(R.id.vivo_music_artist)
             view.measure(View.MeasureSpec.makeMeasureSpec(rect.width().roundToInt(), View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(rect.height().roundToInt(), View.MeasureSpec.EXACTLY))
@@ -122,15 +141,35 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
             }
         }
         lyricFrames[cameraSafe] = lyric
+        val density = context.resources.displayMetrics.density
+        val content = contentMotions.getOrPut(cameraSafe) { ContentMotion(
+            VivoMusicLayerMotion(CONTENT_DURATION_MS, 0.03f, 0f),
+            VivoMusicLayerMotion(CONTENT_DURATION_MS, 0f, 3f * density),
+            VivoMusicLayerMotion(CONTENT_DURATION_MS, 0f, 3f * density)) }
+        fun crop(id: Int): Bitmap {
+            val rect = surface.bounds.getValue(id)
+            return Bitmap.createBitmap(surface.bitmap, rect.left.toInt(), rect.top.toInt(), rect.width().toInt(), rect.height().toInt())
+        }
+        val coverMotion = content.cover.update(inputs.artwork ?: "default-cover", now) { crop(R.id.vivo_music_artwork) }
+        val titleMotion = content.title.update(songKey to song.name, now) { crop(R.id.vivo_music_title) }
+        val currentGlyph = (lyric.from ?: lyric.to).levels.first()
+        val artistMotion = content.artist.update(songKey to lyricText, now, animate = content.songKey != songKey) { currentGlyph }
+        content.songKey = songKey
+        contentFrames[cameraSafe] = listOf(coverMotion, titleMotion, artistMotion)
+        val playMotion = playMotions.getOrPut(cameraSafe) { VivoMusicToggleMotion() }
+            .update(inputs.playbackControlPlaying && !inputs.audioRouteMuted, now)
         val retained = java.util.Collections.newSetFromMap(IdentityHashMap<Bitmap, Boolean>()).apply {
             surfaces.values.forEach { add(it.bitmap); addAll(it.icons.values.flatten()) }
             backdropFrames.values.forEach { add(it.from); add(it.to) }
             lyricFrames.values.forEach { addAll(it.bitmaps) }
+            contentFrames.values.flatten().forEach { addAll(it.bitmaps) }
         }
         encodedImages.keys.retainAll(retained)
         val writer = RemoteComposeWriter(width, height, "NeriPlayer music", 6, 0, platform)
         val calendar = Calendar.getInstance()
         val anchor = calendar.get(Calendar.MINUTE) * 60f + calendar.get(Calendar.SECOND) + calendar.get(Calendar.MILLISECOND) / 1000f
+        val preparationMs = (SystemClock.elapsedRealtime() - now).coerceAtLeast(0L)
+        val lyricPreparationMs = (SystemClock.elapsedRealtime() - (lyrics?.sampledAtMs?.takeIf { it > 0L } ?: now)).coerceAtLeast(0L)
         val startedAt = writer.addFloatConstant(anchor)
         val from = writer.addFloatConstant(motion.from)
         val target = writer.addFloatConstant(motion.target)
@@ -142,6 +181,10 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
         val restartRequested = writer.addFloatConstant(0f)
         val initialized = writer.addFloatConstant(0f)
         val hostStartedAt = writer.addFloatConstant(0f)
+        val playFrom = writer.addFloatConstant(playMotion.from)
+        val playClicked = writer.addFloatConstant(0f)
+        val playStartedAt = writer.addFloatConstant(anchor)
+        val playRestart = writer.addFloatConstant(0f)
         val localChecked = surface.icons.keys.filter {
             it == R.id.vivo_music_play || (it == R.id.vivo_music_favorite && !inputs.interactiveFavorite)
         }.associateWith { id -> writer.addFloatConstant(if (if (id == R.id.vivo_music_play)
@@ -166,6 +209,12 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
         ValueFloatChange(Utils.idFromNan(restartRequested), 0f).write(writer)
         writer.endRunActions()
         writer.endConditionalOperations()
+        writer.conditionalOperations(ConditionalOperations.TYPE_EQ, playRestart, 1f)
+        writer.startRunActions()
+        ValueFloatExpressionChange(Utils.idFromNan(playStartedAt), Utils.idFromNan(clock)).write(writer)
+        ValueFloatChange(Utils.idFromNan(playRestart), 0f).write(writer)
+        writer.endRunActions()
+        writer.endConditionalOperations()
         // Reapply can retain the old canvas clock even when it hasn't drawn during delivery.
         // Initialize on the first actual paint, using only local value actions (no player commands).
         val hostClock = writer.floatExpression(RemoteContext.FLOAT_ANIMATION_TIME)
@@ -178,16 +227,38 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
         val hostElapsed = writer.floatExpression(hostClock, hostStartedAt, SUB, 0f, MAX)
         val backgroundAlpha = if (backdrop.from === backdrop.to) 1f else writer.floatExpression(
             backdrop.alpha, hostElapsed, VivoMusicBackdropTransition.DURATION_MS / 1000f, DIV, ADD, 1f, MIN)
+        // Lyrics use the playback deadline, including preparation/delivery time. Reapply must
+        // never grant another entrance animation after the first syllable has already started.
+        // Keep animation-time in the dependency graph: continuous wall-clock expressions
+        // alone do not request every display frame on a paused OriginOS host.
+        val documentElapsed = writer.floatExpression(clock, anchor, SUB, 5400f, ADD, 3600f, MOD, 1800f, SUB, 0f, MAX,
+            hostClock, 0f, MUL, ADD)
         val lyricTime = if (lyric.from == null) 1f else writer.floatExpression(
-            lyric.progress, hostElapsed, VivoMusicLyricTransition.DURATION_MS / 1000f, DIV, ADD, 1f, MIN)
+            documentElapsed, 1000f, MUL, lyricPreparationMs.toFloat(), ADD, lyric.boundaryMs, SUB,
+            lyric.durationMs, ADD, lyric.durationMs, DIV, 0f, MAX, 1f, MIN)
         val lyricT = writer.floatExpression(lyricTime, lyricTime, MUL, 3f, 2f, lyricTime, MUL, SUB, MUL)
+        fun contentTime(frame: VivoMusicLayerMotion.Frame): Float {
+            if (frame.from == null) return 1f
+            val time = writer.floatExpression(frame.progress, hostElapsed, CONTENT_DURATION_MS / 1000f, DIV, ADD, 1f, MIN)
+            return writer.floatExpression(time, time, MUL, 3f, 2f, time, MUL, SUB, MUL)
+        }
+        val coverT = contentTime(coverMotion)
+        val titleT = contentTime(titleMotion)
+        val artistT = contentTime(artistMotion)
+        val playInitialTime = writer.floatExpression(playMotion.progress, documentElapsed, preparationMs / 1000f, ADD,
+            VivoMusicToggleMotion.DURATION_MS / 1000f, DIV, ADD, 1f, MIN)
+        val playClickTime = writer.floatExpression(clock, playStartedAt, SUB, 5400f, ADD, 3600f, MOD, 1800f, SUB,
+            VivoMusicToggleMotion.DURATION_MS / 1000f, DIV, 0f, MAX, 1f, MIN)
+        val playTime = writer.floatExpression(playInitialTime, playClicked, playClickTime, playInitialTime, SUB, MUL, ADD)
+        val playT = writer.floatExpression(playTime, playTime, MUL, 3f, 2f, playTime, MUL, SUB, MUL)
+        val playValue = writer.floatExpression(localChecked.getValue(R.id.vivo_music_play), playFrom, SUB, playT, MUL, playFrom, ADD)
         // The host clock wraps once per hour. Seek and playback must continue across that boundary.
         val elapsed = writer.floatExpression(clock, startedAt, SUB, 5400f, ADD, 3600f, MOD, 1800f, SUB, 0f, MAX)
         val t = writer.floatExpression(elapsed, seconds, DIV, 0f, MAX, 1f, MIN)
         val eased = writer.floatExpression(t, t, MUL, 3f, 2f, t, MUL, SUB, MUL)
-        val speed = if (motion.playing && inputs.durationMs > 0L) 1000f / inputs.durationMs else 0f
+        val progressSpeed = if (motion.playing && inputs.durationMs > 0L) 1000f / inputs.durationMs else 0f
         val animatedFraction = writer.floatExpression(target, from, SUB, eased, MUL, from, ADD,
-            elapsed, speed, MUL, ADD, 0f, MAX, 1f, MIN)
+            elapsed, progressSpeed, MUL, ADD, 0f, MAX, 1f, MIN)
         val fraction = writer.floatExpression(frozen, running, animatedFraction, frozen, SUB, MUL, ADD)
         val toggled = localChecked.mapValues { (_, checked) -> writer.floatExpression(1f, checked, SUB) }
         writer.endCanvas()
@@ -244,7 +315,15 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
             val rect = surface.bounds.getValue(id)
             hit((rect.left - cursor).coerceAtLeast(0f))
             val checked = localChecked[id]
-            if (checked != null) {
+            if (id == R.id.vivo_music_play && checked != null) {
+                hit(rect.width(),
+                    ValueFloatExpressionChange(Utils.idFromNan(playFrom), Utils.idFromNan(playValue)),
+                    ValueFloatExpressionChange(Utils.idFromNan(playStartedAt), Utils.idFromNan(clock)),
+                    ValueFloatChange(Utils.idFromNan(playClicked), 1f),
+                    ValueFloatChange(Utils.idFromNan(playRestart), 1f),
+                    ValueFloatExpressionChange(Utils.idFromNan(checked), Utils.idFromNan(toggled.getValue(id))), HostAction(id),
+                    description = surface.descriptions[id])
+            } else if (checked != null) {
                 hit(rect.width(),
                     ValueFloatExpressionChange(Utils.idFromNan(checked), Utils.idFromNan(toggled.getValue(id))), HostAction(id),
                     description = surface.descriptions[id])
@@ -284,10 +363,30 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
                 RemoteComposeWriter.IMAGE_SCALE_FILL_BOUNDS, 1f, null)
         }
         val cover = surface.bounds.getValue(R.id.vivo_music_artwork)
-        staticPart(R.id.vivo_music_artwork, x(cover.left), y(cover.centerY()))
+        fun layer(bitmap: Bitmap, left: Float, centerY: Float, visibility: Float,
+            scaleDelta: Float, travel: Float, incoming: Boolean, centered: Boolean) {
+            val phase = writer.floatExpression(1f, visibility, SUB)
+            val scale = writer.floatExpression(1f, scaleDelta, phase, MUL, SUB)
+            val w = writer.floatExpression(sized(bitmap.width.toFloat()), scale, MUL)
+            val h = writer.floatExpression(sized(bitmap.height.toFloat()), scale, MUL)
+            val actualLeft = if (centered) writer.floatExpression(left, sized(bitmap.width.toFloat()), w, SUB, 2f, DIV, ADD) else left
+            val top = writer.floatExpression(centerY, h, 2f, DIV, SUB,
+                sized(travel), phase, MUL, if (incoming) 1f else -1f, MUL, ADD)
+            writer.rcPaint.setAlpha(visibility).commit()
+            writer.drawBitmap(bitmap, actualLeft, top, writer.floatExpression(actualLeft, w, ADD),
+                writer.floatExpression(top, h, ADD), null)
+        }
+        fun contentLayer(frame: VivoMusicLayerMotion.Frame, t: Float, left: Float, centerY: Float,
+            motion: VivoMusicLayerMotion) {
+            frame.from?.let { layer(it, left, centerY, writer.floatExpression(1f, t, SUB),
+                motion.scaleDelta, motion.travel, false, motion.travel == 0f) }
+            layer(frame.to, left, centerY, t, motion.scaleDelta, motion.travel, true, motion.travel == 0f)
+            writer.rcPaint.setAlpha(1f).commit()
+        }
+        contentLayer(coverMotion, coverT, x(cover.left), y(cover.centerY()), content.cover)
         val title = surface.bounds.getValue(R.id.vivo_music_title)
-        staticPart(R.id.vivo_music_title, writer.floatExpression(x(cover.left), sized(title.left - cover.left), ADD),
-            writer.floatExpression(y(cover.centerY()), sized(title.centerY() - cover.centerY()), ADD))
+        contentLayer(titleMotion, titleT, writer.floatExpression(x(cover.left), sized(title.left - cover.left), ADD),
+            writer.floatExpression(y(cover.centerY()), sized(title.centerY() - cover.centerY()), ADD), content.title)
         val lyricRect = surface.bounds.getValue(R.id.vivo_music_artist)
         val lyricLeft = writer.floatExpression(x(cover.left), sized(lyricRect.left - cover.left - padding), ADD)
         val lyricY = writer.floatExpression(y(cover.centerY()), sized(lyricRect.centerY() - cover.centerY()), ADD)
@@ -300,12 +399,13 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
             val bitmap = glyph.levels.first()
             val w = writer.floatExpression(sized(bitmap.width.toFloat()), scale, MUL)
             val h = writer.floatExpression(sized(bitmap.height.toFloat()), scale, MUL)
-            val top = writer.floatExpression(lyricY, offset, ADD, h, 2f, DIV, SUB)
+            val top = writer.floatExpression(lyricY, offset, ADD, h, 2f, DIV, SUB,
+                sized(content.artist.travel), 1f, artistT, SUB, MUL, ADD)
             val layers = if (lyric.from == null) glyph.levels.take(1) else glyph.levels
             for ((level, layer) in layers.withIndex()) {
                 val weight = writer.floatExpression(1f, phase, (VivoMusicLyricTransition.BLUR_LEVELS - 1).toFloat(),
                     MUL, level.toFloat(), SUB, ABS, SUB, 0f, MAX)
-                writer.rcPaint.setAlpha(writer.floatExpression(visibility, weight, MUL)).commit()
+                writer.rcPaint.setAlpha(writer.floatExpression(visibility, weight, MUL, artistT, MUL)).commit()
                 writer.drawBitmap(layer, lyricLeft, top, writer.floatExpression(lyricLeft, w, ADD),
                     writer.floatExpression(top, h, ADD), null)
             }
@@ -315,6 +415,8 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
             writer.floatExpression(lyricY, sized(lyricRect.height() / 2 + 2 * context.resources.displayMetrics.density), SUB),
             RemoteContext.FLOAT_WINDOW_WIDTH,
             writer.floatExpression(lyricY, sized(lyricRect.height() / 2 + 4 * context.resources.displayMetrics.density), ADD))
+        artistMotion.from?.let { layer(it, lyricLeft, lyricY, writer.floatExpression(1f, artistT, SUB),
+            0f, content.artist.travel, false, false) }
         lyric.from?.let { drawLyric(it, false) }
         drawLyric(lyric.to, true)
         writer.restore()
@@ -326,7 +428,7 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
         }
         surface.icons.forEach { (id, icons) ->
             val rect = surface.bounds.getValue(id)
-            val checked = localChecked[id]
+            val checked = if (id == R.id.vivo_music_play) playValue else localChecked[id]
             val w = sized(rect.width())
             val h = sized(rect.height())
             val left = writer.floatExpression(x(rect.centerX()), w, 2f, DIV, SUB)
@@ -337,8 +439,13 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
                 writer.drawBitmap(icons[if (icons.size == 1) 0 else if (inputs.favorite) 1 else 0], left, top, right, bottom, null)
             } else {
                 for (state in 0..1) {
-                    writer.rcPaint.setAlpha(if (state == 0) writer.floatExpression(1f, checked, SUB) else checked).commit()
-                    writer.drawBitmap(icons[state], left, top, right, bottom, null)
+                    val alpha = if (state == 0) writer.floatExpression(1f, checked, SUB) else checked
+                    val inset = if (id == R.id.vivo_music_play) writer.floatExpression(1f, alpha, SUB, 0.03f, MUL) else 0f
+                    val dx = writer.floatExpression(w, inset, MUL)
+                    val dy = writer.floatExpression(h, inset, MUL)
+                    writer.rcPaint.setAlpha(alpha).commit()
+                    writer.drawBitmap(icons[state], writer.floatExpression(left, dx, ADD), writer.floatExpression(top, dy, ADD),
+                        writer.floatExpression(right, dx, SUB), writer.floatExpression(bottom, dy, SUB), null)
                 }
                 writer.rcPaint.setAlpha(1f).commit()
             }
@@ -419,9 +526,11 @@ internal class VivoMusicAnimatedCard(private val context: Context) {
     fun clear() {
         surfaces.clear(); encodedImages.clear(); backdropTransitions.clear(); backdropFrames.clear()
         lyricTransitions.clear(); lyricFrames.clear()
+        contentMotions.clear(); contentFrames.clear(); playMotions.clear()
     }
 
     companion object {
+        const val CONTENT_DURATION_MS = 220L
         const val SEEK_ACTION_ID = 0x4e50fb00
         @ChecksSdkIntAtLeast(api = 35)
         fun supported() = Build.VERSION.SDK_INT >= 35 && RemoteViews.DrawInstructions.getSupportedVersion() >= 6

@@ -1,38 +1,7 @@
-name: NeriPlayer Android Native CI
+name: NeriPlayer Android Native checks (manual)
 
 on:
-  push:
-    branches:
-      - master
-    paths:
-      - '.github/workflows/android_native_ci.yml'
-      - 'modules/native/**'
-      - 'app/src/main/jniLibs/**'
-      - 'app/build.gradle*'
-      - 'build.gradle*'
-      - 'settings.gradle*'
-      - 'build-logic/**'
-      - 'buildSrc/**'
-      - 'gradle/**'
-      - 'gradle.properties'
-      - 'gradlew'
-      - 'gradlew.bat'
-      - 'tools_pub/usb-async-lab'
-  pull_request:
-    paths:
-      - '.github/workflows/android_native_ci.yml'
-      - 'modules/native/**'
-      - 'app/src/main/jniLibs/**'
-      - 'app/build.gradle*'
-      - 'build.gradle*'
-      - 'settings.gradle*'
-      - 'build-logic/**'
-      - 'buildSrc/**'
-      - 'gradle/**'
-      - 'gradle.properties'
-      - 'gradlew'
-      - 'gradlew.bat'
-      - 'tools_pub/usb-async-lab'
+  # APK automation is owned by vivo_upstream.yml and gated on a published upstream Release.
   workflow_dispatch:
 
 permissions:
@@ -47,7 +16,6 @@ jobs:
     name: Host tests (${{ matrix.profile }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    if: ${{ github.event_name != 'push' || !startsWith(github.event.head_commit.message, '[skip ci]') }}
     strategy:
       fail-fast: false
       matrix:

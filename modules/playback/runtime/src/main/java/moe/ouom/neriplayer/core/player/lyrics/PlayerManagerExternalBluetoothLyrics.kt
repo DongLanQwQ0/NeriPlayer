@@ -7,10 +7,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import android.os.SystemClock
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.core.player.audio.isBluetoothOutputType
 import moe.ouom.neriplayer.core.player.metadata.ExternalBluetoothLyricPayload
+import moe.ouom.neriplayer.core.player.metadata.ExternalLyricWindow
+import moe.ouom.neriplayer.core.player.metadata.externalLyricWindow
 import moe.ouom.neriplayer.core.player.metadata.findExternalBluetoothLyricLine
 import moe.ouom.neriplayer.core.player.metadata.msUntilNextExternalLyricLine
 import moe.ouom.neriplayer.core.player.metadata.findFloatingTranslatedLyricLine
@@ -184,6 +187,19 @@ internal fun PlayerManager.msUntilNextExternalLyricLine(positionMs: Long): Long?
     val song = _currentSongFlow.value ?: return null
     if (externalBluetoothLyricsSongKey != song.stableKey()) return null
     return msUntilNextExternalLyricLine(externalBluetoothLyrics, positionMs, externalLyricOffsetMs(song))
+}
+
+/** Look ahead without changing the current-line flow used by other lyric outputs. */
+internal fun PlayerManager.vivoMusicLyricWindow(songKey: String, positionMs: Long): ExternalLyricWindow? = synchronized(this) {
+    val song = _currentSongFlow.value ?: return@synchronized null
+    if (!(dynamicIslandLyricsEnabled || externalBluetoothLyricsEnabled) || song.stableKey() != songKey || externalBluetoothLyricsSongKey != songKey ||
+        externalBluetoothLyrics.isEmpty()) return@synchronized null
+    // Notification flows may be sampled up to 1.5s apart. Read the engine on the service's
+    // main thread instead of treating that old position as if it were captured right now.
+    val sampledAt = SystemClock.elapsedRealtime()
+    val actualPosition = if (initialized && !isPendingMediaLoadActive())
+        resolveDisplayedPlaybackPosition(player.currentPosition.coerceAtLeast(0L)) else positionMs
+    externalLyricWindow(externalBluetoothLyrics, actualPosition, externalLyricOffsetMs(song)).copy(sampledAtMs = sampledAt)
 }
 
 /** 只有外部歌词需要进度时的下一次刷新间隔；读不到位置时保持交互间隔 */

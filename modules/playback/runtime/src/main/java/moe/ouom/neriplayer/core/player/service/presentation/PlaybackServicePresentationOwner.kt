@@ -230,6 +230,7 @@ internal class PlaybackServicePresentationOwner(
         lyricState: StatusBarLyricNotificationState,
         floatingLyricsEnabled: Boolean,
     ): PreparedServiceNotification {
+        val positionUpdatedAtMs = port.elapsedRealtime()
         val playback = source.playback()
         val song = playback.song
         val artworkSnapshot = artwork.snapshotFor(song)
@@ -266,6 +267,8 @@ internal class PlaybackServicePresentationOwner(
             positionMs = servicePlaybackPositionMs(playback),
             lyricLine = source.metadata().payload.lyric,
             durationMs = durationMs,
+            playbackSpeed = servicePlaybackSpeed(resolveServicePlaybackState(playback), playback),
+            positionUpdatedAtMs = positionUpdatedAtMs,
         )
         return PreparedServiceNotification(snapshot.copy(durationMs = durationMs), renderInputs)
     }

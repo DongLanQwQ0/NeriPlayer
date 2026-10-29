@@ -22,6 +22,8 @@ import moe.ouom.neriplayer.feature.player.R
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
 import moe.ouom.neriplayer.core.player.host.PlayerDependencies
+import moe.ouom.neriplayer.core.player.PlayerManager
+import moe.ouom.neriplayer.core.player.lyrics.vivoMusicLyricWindow
 import moe.ouom.neriplayer.data.local.media.displayArtist
 import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.core.player.presentation.widget.formatPlaybackWidgetTime
@@ -83,6 +85,7 @@ internal class VivoMusicIslandBridge(private val context: Context) {
     private var pendingControls: PendingControls? = null
     private val handler = Handler(Looper.getMainLooper())
     private var seekPublicationUntilMs = 0L
+    private var controlPublicationUntilMs = 0L
     private var deferredInputs: PlaybackServiceNotificationRenderInputs? = null
     private val resumePublication = Runnable {
         val inputs = deferredInputs
@@ -98,6 +101,11 @@ internal class VivoMusicIslandBridge(private val context: Context) {
     fun previewControl(playing: Boolean?, favorite: Boolean?, positionMs: Long?) {
         val inputs = lastInputs ?: return
         val songKey = inputs.song?.stableKey() ?: return
+        if (playing != null && VivoMusicAnimatedCard.supported()) {
+            val now = SystemClock.elapsedRealtime()
+            animatedCard.previewPlaying(playing, now)
+            controlPublicationUntilMs = now + VivoMusicToggleMotion.DURATION_MS
+        }
         if (positionMs != null) {
             val now = SystemClock.elapsedRealtime()
             val playingNow = inputs.playbackControlPlaying && !inputs.audioRouteMuted
@@ -132,10 +140,12 @@ internal class VivoMusicIslandBridge(private val context: Context) {
             audioRouteMuted = if (remaining?.playing == true) false else inputs.audioRouteMuted,
             favorite = remaining?.favorite ?: inputs.favorite,
         )
-        val position = seekState.resolve(inputs.song?.stableKey(), inputs.durationMs, inputs.positionMs,
+        val positionAge = if (inputs.positionUpdatedAtMs > 0L && inputs.playbackSpeed > 0f)
+            ((now - inputs.positionUpdatedAtMs).coerceAtLeast(0L) * inputs.playbackSpeed).toLong() else 0L
+        val position = seekState.resolve(inputs.song?.stableKey(), inputs.durationMs, inputs.positionMs + positionAge,
             resolved.playbackControlPlaying && !resolved.audioRouteMuted, now)
         if (pendingControls == null && !seekState.pending) handler.removeCallbacks(rollback)
-        return resolved.copy(positionMs = position)
+        return resolved.copy(positionMs = position, positionUpdatedAtMs = now)
     }
 
     fun updatePlaybackState(state: PlaybackState) {
@@ -144,8 +154,9 @@ internal class VivoMusicIslandBridge(private val context: Context) {
         if (!context.getSystemService(PowerManager::class.java).isInteractive) return
         val now = SystemClock.elapsedRealtime()
         if (now - lastProgressUpdateMs < 1_000L) return
-        if (inputs.positionMs == state.position) return
-        publish(inputs.copy(positionMs = state.position))
+        if (inputs.positionMs == state.position && inputs.playbackSpeed == state.playbackSpeed) return
+        publish(inputs.copy(positionMs = state.position, playbackSpeed = state.playbackSpeed,
+            positionUpdatedAtMs = state.lastPositionUpdateTime))
     }
 
     fun publish(inputs: PlaybackServiceNotificationRenderInputs) {
@@ -176,11 +187,12 @@ internal class VivoMusicIslandBridge(private val context: Context) {
         if (inputs.song?.stableKey() != lastInputs?.song?.stableKey() || inputs.durationMs != lastInputs?.durationMs) {
             seekState.clear()
             seekPublicationUntilMs = 0L
+            controlPublicationUntilMs = 0L
             deferredInputs = null
             handler.removeCallbacks(resumePublication)
             return false
         }
-        val delay = seekPublicationUntilMs - SystemClock.elapsedRealtime()
+        val delay = maxOf(seekPublicationUntilMs, controlPublicationUntilMs) - SystemClock.elapsedRealtime()
         if (delay <= 0L) {
             deferredInputs = null
             handler.removeCallbacks(resumePublication)
@@ -299,10 +311,17 @@ internal class VivoMusicIslandBridge(private val context: Context) {
             R.id.vivo_music_favorite to if (inputs.interactiveFavorite) open else
                 drawingControl(AudioPlayerService.ACTION_TOGGLE_FAV, songKey, 11),
         )
-        return animatedCard.render(xml, inputs, { width, height ->
+        val age = if (inputs.positionUpdatedAtMs > 0L && inputs.playbackSpeed > 0f)
+            ((backgroundTime - inputs.positionUpdatedAtMs).coerceAtLeast(0L) * inputs.playbackSpeed).toLong() else 0L
+        val lyricPosition = inputs.positionMs + age
+        val lyricWindow = PlayerManager.vivoMusicLyricWindow(songKey, lyricPosition)
+        // currentSong and the external lyric flow arrive independently during a track change.
+        // Only display text owned by this song; otherwise the new artist would snap in later.
+        return animatedCard.render(xml, inputs.copy(positionMs = lyricPosition, lyricLine = lyricWindow?.current), { width, height ->
             animatedCard.prepareBackground(cardArtwork.backgroundFor(width, height), cameraSafe, backgroundTime)
         }, cameraSafe,
-            progressMotion.frame(SystemClock.elapsedRealtime()), actions, seekIntents, backgroundTime)
+            progressMotion.frame(SystemClock.elapsedRealtime()), actions, seekIntents, backgroundTime,
+            lyricWindow)
     }
 
     @android.annotation.TargetApi(Build.VERSION_CODES.S)
@@ -427,6 +446,7 @@ internal class VivoMusicIslandBridge(private val context: Context) {
         progressMotion.clear()
         seekState.clear()
         seekPublicationUntilMs = 0L
+        controlPublicationUntilMs = 0L
         deferredInputs = null
         handler.removeCallbacks(resumePublication)
         if (Build.VERSION.SDK_INT >= 35) animatedCard.clear()

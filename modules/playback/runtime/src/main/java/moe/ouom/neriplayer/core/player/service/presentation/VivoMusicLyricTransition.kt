@@ -1,50 +1,35 @@
 package moe.ouom.neriplayer.core.player.service.presentation
 
 import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Paint
-import android.graphics.RectF
-import kotlin.math.abs
 import kotlin.math.roundToInt
 import moe.ouom.neriplayer.common.graphics.artworkBoxBlurPass
 
-/** Small glyph-only layers; progress updates neither rasterize text nor blur the album again. */
+/** Only current/upcoming glyphs are cached. The transition finishes at the media timestamp. */
 internal class VivoMusicLyricTransition(private val density: Float) {
     companion object {
-        const val DURATION_MS = 300L
+        const val DURATION_MS = 180L
         const val SCALE_DELTA = 0.06f
         const val TRAVEL_DP = 3f
         const val BLUR_LEVELS = 3
     }
     data class Glyph(val levels: List<Bitmap>)
-    data class Frame(val from: Glyph?, val to: Glyph, val progress: Float) {
+    data class Frame(val from: Glyph?, val to: Glyph, val boundaryMs: Float, val durationMs: Float) {
         val bitmaps get() = from?.levels.orEmpty() + to.levels
+        fun progress(elapsedMs: Float): Float = if (from == null) 1f else
+            ((elapsedMs - boundaryMs + durationMs) / durationMs).coerceIn(0f, 1f)
     }
-    private var identity: Pair<String, String>? = null
-    private var from: Glyph? = null
-    private var to: Glyph? = null
-    private var startedAt = 0L
+    private var song: String? = null
+    private val glyphs = mutableMapOf<String, Glyph>()
 
-    fun update(songKey: String, text: String, isLyric: Boolean, now: Long,
-        color: Int, render: () -> Bitmap): Frame {
-        val next = songKey to text
-        if (identity != next) {
-            val old = frame(now)
-            from = if (identity?.first == songKey && isLyric && old != null) {
-                if (old.from == null) old.to else glyph(snapshot(old), color)
-            } else null
-            to = glyph(render(), color)
-            identity = next
-            startedAt = now
-        }
-        return checkNotNull(frame(now))
-    }
-
-    fun frame(now: Long): Frame? {
-        val current = to ?: return null
-        val progress = ((now - startedAt).toFloat() / DURATION_MS).coerceIn(0f, 1f)
-        if (progress >= 1f) from = null
-        return Frame(from, current, if (from == null) 1f else progress)
+    fun prepare(songKey: String, current: String, next: String?, boundaryMs: Float,
+        durationMs: Float, color: Int, render: (String) -> Bitmap): Frame {
+        if (song != songKey) { glyphs.clear(); song = songKey }
+        val upcoming = next?.takeUnless { it == current || durationMs <= 0f }
+        glyphs.keys.retainAll(listOfNotNull(current, upcoming).toSet())
+        fun glyph(text: String) = glyphs.getOrPut(text) { glyph(render(text), color) }
+        val from = glyph(current)
+        return if (upcoming == null) Frame(null, from, 0f, 1f) else
+            Frame(from, glyph(upcoming), boundaryMs, durationMs)
     }
 
     private fun glyph(sharp: Bitmap, color: Int): Glyph = Glyph(buildList {
@@ -64,29 +49,4 @@ internal class VivoMusicLyricTransition(private val density: Float) {
         }
     })
 
-    /** Retarget from the current composite instead of flashing an obsolete line back to full size. */
-    private fun snapshot(frame: Frame): Bitmap {
-        val bitmap = frame.to.levels.first()
-        return Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888).also { result ->
-            val canvas = Canvas(result)
-            val t = frame.progress * frame.progress * (3f - 2f * frame.progress)
-            fun draw(glyph: Glyph, entering: Boolean) {
-                val visibility = if (entering) t else 1f - t
-                val phase = 1f - visibility
-                val scale = 1f - SCALE_DELTA * phase
-                val offset = TRAVEL_DP * density * if (entering) phase else -phase
-                val top = (bitmap.height - bitmap.height * scale) / 2f + offset
-                for ((level, layer) in glyph.levels.withIndex()) {
-                    val weight = (1f - abs(phase * (BLUR_LEVELS - 1) - level)).coerceAtLeast(0f)
-                    if (weight == 0f || visibility == 0f) continue
-                    canvas.drawBitmap(layer, null, RectF(0f, top, bitmap.width * scale, top + bitmap.height * scale),
-                        Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
-                            alpha = (visibility * weight * 255).roundToInt()
-                        })
-                }
-            }
-            frame.from?.let { draw(it, false) }
-            draw(frame.to, true)
-        }
-    }
 }
