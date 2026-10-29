@@ -69,6 +69,11 @@ import moe.ouom.neriplayer.core.player.runtime.transport.PlaybackTransportOwner
 import moe.ouom.neriplayer.core.player.audio.output.PlayerManagerPlaybackTransportPort
 import moe.ouom.neriplayer.core.player.engine.datasource.ConditionalHttpDataSourceFactory
 import moe.ouom.neriplayer.core.player.lifecycle.clearCacheImpl
+import moe.ouom.neriplayer.core.player.lifecycle.clearStorageCachesImpl
+import moe.ouom.neriplayer.core.player.lifecycle.estimateStorageCacheClearImpl
+import moe.ouom.neriplayer.data.model.storage.StorageCacheClearOptions
+import moe.ouom.neriplayer.data.model.storage.PlayerCacheClearEstimate
+import moe.ouom.neriplayer.data.model.storage.PlayerCacheClearOutcome
 import moe.ouom.neriplayer.core.player.lifecycle.ensureInitializedImpl
 import moe.ouom.neriplayer.core.player.lifecycle.handleAudioBecomingNoisyImpl
 import moe.ouom.neriplayer.core.player.lifecycle.initializeImpl
@@ -176,6 +181,7 @@ import moe.ouom.neriplayer.core.player.persistence.playFromQueueImpl
 import moe.ouom.neriplayer.core.player.persistence.rebaseUserLyricOffsetsForSourceImpl
 import moe.ouom.neriplayer.core.player.persistence.removeCurrentFromFavoritesImpl
 import moe.ouom.neriplayer.core.player.persistence.removeQueueItemImpl
+import moe.ouom.neriplayer.core.player.persistence.removeQueueItemsImpl
 import moe.ouom.neriplayer.core.player.persistence.replaceCurrentInQueueAndPlayImpl
 import moe.ouom.neriplayer.core.player.persistence.replaceMetadataFromSearchImpl
 import moe.ouom.neriplayer.core.player.persistence.resumeRestoredPlaybackIfNeededImpl
@@ -226,6 +232,7 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_QQ_MUSIC_LYRIC_OFF
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_KUGOU_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_LRCLIB_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricSourcePreference
 import moe.ouom.neriplayer.data.model.settings.playback.PlaybackPreferenceSnapshot
 import moe.ouom.neriplayer.data.settings.playback.readPlaybackPreferenceSnapshotSync
@@ -333,6 +340,7 @@ object PlayerManager {
         loader = PlayerManagerLyriconLyricsLoader,
         stableKey = { it.stableKey() },
         sameIdentity = { song, currentSong -> currentSong?.sameIdentityAs(song) == true },
+        isBiliCcSubtitleLyrics = { song -> PlayerLyricsProvider.isBiliCcOriginal(song) },
     )
     internal var externalBluetoothLyricsLoadJob: Job? = null
     internal var externalBluetoothTranslationLoadJob: Job? = null
@@ -443,6 +451,13 @@ object PlayerManager {
         internal set
     @Volatile
     var defaultLyricSource = LyricSourcePreference.Automatic
+    // B 站 CC 字幕歌词开关，以及用户选定的字幕轨道语言（空串表示自动选择）
+    @Volatile
+    internal var biliCcSubtitleLyricsEnabled = true
+    @Volatile
+    internal var biliCcSubtitleLanguage = ""
+    @Volatile
+    internal var biliCcSubtitleAiOnlyEnabled = true
     internal var statusBarLyricsEnable = false
     internal var externalBluetoothLyricsEnabled = false
     internal var externalBluetoothTranslationEnabled = false
@@ -462,6 +477,7 @@ object PlayerManager {
     internal var kugouLyricDefaultOffsetMs = DEFAULT_KUGOU_LYRIC_OFFSET_MS
     internal var lrclibLyricDefaultOffsetMs = DEFAULT_LRCLIB_LYRIC_OFFSET_MS
     internal var amllTtmlLyricDefaultOffsetMs = DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
+    internal var biliCcSubtitleLyricDefaultOffsetMs = DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS
     @Volatile
     internal var biliSkipSegmentPromptEnabled = false
     internal var keepLastPlaybackProgressEnabled = true
@@ -712,6 +728,8 @@ object PlayerManager {
     internal var currentGenericUrlPrefetchKey: String? = null
     @Volatile
     internal var playbackRequestToken = 0L
+        set(value) = synchronized(storageCachePlaybackLock) { field = value }
+    internal val storageCachePlaybackLock = Any()
     @Volatile
     internal var loadedMediaRequestToken = 0L
     internal val _pendingMediaLoadFlow = MutableStateFlow(false)
@@ -784,7 +802,7 @@ object PlayerManager {
     }
 
     private fun publishCurrentSong(song: SongItem?) {
-        _currentSongFlow.value = song
+        synchronized(storageCachePlaybackLock) { _currentSongFlow.value = song }
         lyriconOutput.publishSong(song)
         playbackProgressOwner.onCurrentSongPublished(song)
     }
@@ -847,6 +865,7 @@ object PlayerManager {
             kugouOffsetMs = kugouLyricDefaultOffsetMs,
             lrcLibOffsetMs = lrclibLyricDefaultOffsetMs,
             amllTtmlOffsetMs = amllTtmlLyricDefaultOffsetMs,
+            biliCcSubtitleOffsetMs = biliCcSubtitleLyricDefaultOffsetMs,
         )
     }
 
@@ -1269,6 +1288,15 @@ object PlayerManager {
     fun isBiliTrack(song: SongItem): Boolean {
         return PlaybackMediaItemFactory.isBiliSource(song)
     }
+
+    /** 当前展示的原文是否为该歌曲的 CC 字幕, 供歌词偏移选择使用 */
+    fun isBiliCcSubtitleLyricsActive(song: SongItem?): Boolean =
+        song != null && PlayerLyricsProvider.isBiliCcOriginal(song)
+
+    /** 侧载、下载或首选来源接管原文后清除 CC 来源标记 */
+    fun clearBiliCcSubtitleLyricsOrigin(song: SongItem) {
+        PlayerLyricsProvider.markBiliCcOriginal(song, fromCc = false)
+    }
     internal fun queueIndexOf(song: SongItem, playlist: List<SongItem> = currentPlaylist): Int {
         return playlist.indexOfFirst { it.sameIdentityAs(song) }
     }
@@ -1623,6 +1651,13 @@ object PlayerManager {
         clearImage: Boolean = true
     ): Pair<Boolean, String> = clearCacheImpl(clearAudio, clearImage)
 
+    suspend fun clearStorageCaches(
+        options: StorageCacheClearOptions
+    ): PlayerCacheClearOutcome = clearStorageCachesImpl(options)
+
+    suspend fun estimateStorageCacheClear(retainRecentSongs: Int): PlayerCacheClearEstimate =
+        estimateStorageCacheClearImpl(retainRecentSongs)
+
     internal fun ensureInitialized() = ensureInitializedImpl()
 
     fun prefetchYouTubeQueueWindow(
@@ -1839,6 +1874,8 @@ object PlayerManager {
     fun moveQueueItem(fromIndex: Int, toIndex: Int) = moveQueueItemImpl(fromIndex, toIndex)
 
     fun removeQueueItem(index: Int) = removeQueueItemImpl(index)
+
+    fun removeQueueItems(indices: Set<Int>) = removeQueueItemsImpl(indices)
 
     fun reorderQueue(queue: List<SongItem>, currentIndexInQueue: Int) =
         reorderQueueImpl(queue, currentIndexInQueue)

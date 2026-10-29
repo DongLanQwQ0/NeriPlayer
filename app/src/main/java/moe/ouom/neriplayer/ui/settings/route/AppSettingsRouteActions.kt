@@ -16,6 +16,7 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.FloatingLyricsPreferences
 import moe.ouom.neriplayer.data.model.settings.lyrics.LyricFontScaleTarget
 import moe.ouom.neriplayer.data.settings.SettingsRepository
 import moe.ouom.neriplayer.data.model.storage.StorageCacheClearOptions
+import moe.ouom.neriplayer.data.model.storage.PlayerCacheClearEstimate
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.settings.owner.AppLyricOffsetSettingsOwner
@@ -175,6 +176,10 @@ internal class AppLyricSettingsActions(
 
     val onAmllTtmlLyricDefaultOffsetMsChange: (Long) -> Unit = { offsetMs ->
             scope.launch { repo.setAmllTtmlLyricDefaultOffsetMs(offsetMs) }
+        }
+
+    val onBiliCcSubtitleLyricDefaultOffsetMsChange: (Long) -> Unit = { offsetMs ->
+            scope.launch { repo.setBiliCcSubtitleLyricDefaultOffsetMs(offsetMs) }
         }
 
     val onResetAllLyricDefaultOffsets: () -> Unit = {
@@ -359,6 +364,8 @@ internal class AppStorageSettingsActions(
     private val cacheClearOwner: AppSettingsCacheClearOwner,
     private val snackbarHostState: SnackbarHostState
 ) {
+    val estimateCacheClear: suspend (Int) -> PlayerCacheClearEstimate = PlayerManager::estimateStorageCacheClear
+
     val onBypassProxyChange: (Boolean) -> Unit = { enabled ->
             scope.launch { repo.setBypassProxy(enabled) }
         }
@@ -379,9 +386,8 @@ internal class AppStorageSettingsActions(
             scope.launch { repo.setMaxCacheSizeBytes(size) }
         }
 
-    val onClearCacheClick: (StorageCacheClearOptions) -> Unit = { options ->
-            scope.launch {
-                snackbarHostState.showNeriSnackbar(cacheClearOwner.clear(options))
-            }
-        }
+    val onClearCacheClick: suspend (StorageCacheClearOptions) -> Unit = { options ->
+        val message = cacheClearOwner.clear(options)
+        scope.launch { snackbarHostState.showNeriSnackbar(message) }
+    }
 }

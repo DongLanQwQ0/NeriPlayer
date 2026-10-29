@@ -130,6 +130,7 @@ import org.burnoutcrew.reorderable.detectReorder
 import org.burnoutcrew.reorderable.ReorderableLazyListState
 import org.burnoutcrew.reorderable.rememberReorderableLazyListState
 import org.burnoutcrew.reorderable.reorderable
+import moe.ouom.neriplayer.R as AppR
 
 private const val QueueSheetMaxHeightFraction = 0.9f
 internal val NowPlayingQueueReorderAutoScrollMaxPerFrame = 2.dp
@@ -337,13 +338,12 @@ internal fun selectAllNowPlayingQueueKeys(
 internal fun removeSelectedNowPlayingQueueEntries(
     entries: List<NowPlayingQueueEntry>,
     selectedKeys: Set<String>,
-    removeAt: (Int) -> Unit
+    removeIndices: (Set<Int>) -> Unit
 ) {
-    // 从尾部移除，避免前面的删除使尚未处理的队列索引发生偏移
-    entries.filter { it.key in selectedKeys }
-        .map { it.queueIndex }
-        .sortedDescending()
-        .forEach(removeAt)
+    val indices = entries.filter { it.key in selectedKeys }
+        .mapTo(LinkedHashSet()) { it.queueIndex }
+    // 一次提交所选位置，避免每删一首都发布和保存整份队列
+    if (indices.isNotEmpty()) removeIndices(indices)
 }
 
 internal class NowPlayingQueueReorderOwner(sourceEntries: List<NowPlayingQueueEntry>) {
@@ -868,7 +868,7 @@ internal fun NowPlayingQueueSelectionToolbar(
             )
             Text(
                 text = pluralStringResource(
-                    CoreCommonR.plurals.common_selected_count,
+                    AppR.plurals.common_selected_count,
                     selectedCount,
                     selectedCount
                 ),
@@ -940,6 +940,7 @@ internal fun NowPlayingQueueSheet(
     var selectionMode by remember { mutableStateOf(false) }
     var selectedKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showExportSheet by remember { mutableStateOf(false) }
+    var showRemoveConfirm by remember { mutableStateOf(false) }
     var showQueueIndexJumpDialog by remember { mutableStateOf(false) }
     var queueIndexInput by remember { mutableStateOf("") }
     val sourceEntries = remember(displayedQueueItems) {
@@ -1135,14 +1136,7 @@ internal fun NowPlayingQueueSheet(
                         onSelectAll = {
                             applySelection(selectAllNowPlayingQueueKeys(allItemsSelected, queueItemKeys))
                         },
-                        onRemove = {
-                            removeSelectedNowPlayingQueueEntries(
-                                sourceEntries,
-                                selectedKeys,
-                                PlayerManager::removeQueueItem
-                            )
-                            exitSelection()
-                        },
+                        onRemove = { showRemoveConfirm = true },
                         onInvertSelection = {
                             applySelection(invertNowPlayingQueueSelection(
                                 queueEntries.map { it.song },
@@ -1167,7 +1161,7 @@ internal fun NowPlayingQueueSheet(
                             )
                             Text(
                                 text = pluralStringResource(
-                                    CoreCommonR.plurals.nowplaying_queue_count_format,
+                                    AppR.plurals.nowplaying_queue_count_format,
                                     displayedQueue.size,
                                     displayedQueue.size
                                 ),
@@ -1323,6 +1317,22 @@ internal fun NowPlayingQueueSheet(
         }
     }
 
+    if (showRemoveConfirm) {
+        NowPlayingQueueRemoveConfirmDialog(
+            selectedCount = selectedKeys.size,
+            onDismiss = { showRemoveConfirm = false },
+            onConfirm = {
+                showRemoveConfirm = false
+                removeSelectedNowPlayingQueueEntries(
+                    sourceEntries,
+                    selectedKeys,
+                    PlayerManager::removeQueueItems
+                )
+                exitSelection()
+            }
+        )
+    }
+
     if (showExportSheet) {
         PlaylistExportSheet(
             title = stringResource(CoreCommonR.string.playlist_export_to_local),
@@ -1371,6 +1381,40 @@ internal fun NowPlayingQueueSheet(
             }
         )
     }
+}
+
+@Composable
+private fun NowPlayingQueueRemoveConfirmDialog(
+    selectedCount: Int,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    MiuixSettingsDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(CoreCommonR.string.nowplaying_queue_remove_confirm_title)) },
+        text = {
+            Text(
+                pluralStringResource(
+                    CoreCommonR.plurals.nowplaying_queue_remove_confirm_message,
+                    selectedCount,
+                    selectedCount
+                )
+            )
+        },
+        confirmButton = {
+            MiuixSettingsButton(
+                onClick = onConfirm,
+                enabled = selectedCount > 0
+            ) {
+                Text(stringResource(CoreCommonR.string.nowplaying_queue_remove))
+            }
+        },
+        dismissButton = {
+            MiuixSettingsTextButton(onClick = onDismiss) {
+                Text(stringResource(CoreCommonR.string.action_cancel))
+            }
+        }
+    )
 }
 
 @Composable

@@ -6,6 +6,7 @@ import moe.ouom.neriplayer.data.model.playback.DEFAULT_PLAYBACK_SPEED
 import moe.ouom.neriplayer.data.model.playback.DEFAULT_PLAYBACK_VOLUME_BALANCE
 import moe.ouom.neriplayer.data.model.playback.PlaybackEqualizerPresetId
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_KUGOU_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_LRCLIB_LYRIC_OFFSET_MS
@@ -74,12 +75,13 @@ data class PlaybackPreferenceSnapshot(
     val usbExclusiveVolumeRiskThresholdDbfs: Int =
         DEFAULT_USB_EXCLUSIVE_VOLUME_RISK_THRESHOLD_DBFS,
     val allowMixedPlayback: Boolean = false,
-    val preemptAudioFocus: Boolean = false,
+    val preemptAudioFocus: Boolean = true,
     val cloudMusicLyricDefaultOffsetMs: Long = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS,
     val qqMusicLyricDefaultOffsetMs: Long = DEFAULT_QQ_MUSIC_LYRIC_OFFSET_MS,
     val kugouLyricDefaultOffsetMs: Long = DEFAULT_KUGOU_LYRIC_OFFSET_MS,
     val lrclibLyricDefaultOffsetMs: Long = DEFAULT_LRCLIB_LYRIC_OFFSET_MS,
     val amllTtmlLyricDefaultOffsetMs: Long = DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS,
+    val biliCcSubtitleLyricDefaultOffsetMs: Long = DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS,
     val lyriconEnabled: Boolean = false,
     val amllLyricsEnabled: Boolean = true,
     val preferWordTimedLyrics: Boolean = true,

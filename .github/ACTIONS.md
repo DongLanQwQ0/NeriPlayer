@@ -13,6 +13,8 @@
 - `app/build.gradle.kts`
 - `modules/playback/runtime/src/main/java/moe/ouom/neriplayer/core/player/service/presentation/AndroidPlaybackServicePresentationPort.kt`
 
-这些运行未进入 APK 构建与签名阶段。该 Release 仍待人工合并适配；修改工作流触发规则不会解决源码冲突。
+这些运行未进入 APK 构建与签名阶段。现已合并该 Release：保留独立 vivo 构建类型和调试模糊开关，
+同时纳入上游可指定的构建时间戳和可选性能基准构建；通知保留缓存位图小图标，并使用上游动态语言上下文。
+上游新增的自动化工作流也仅保留手动入口。发布前检查补充语言与图标组合、歌词时序、封面分辨率、小组件和设置偏好回归。
 
 较早一次 `40397314192` 在查询 Release API 时出现 `RemoteDisconnected`。已为此路径增加有上限的重试。

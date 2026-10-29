@@ -12,7 +12,9 @@ import moe.ouom.neriplayer.data.model.settings.appearance.DEFAULT_VIVO_ISLAND_BL
 import moe.ouom.neriplayer.data.settings.download.DEFAULT_DOWNLOAD_BILI_AUDIO_QUALITY
 import moe.ouom.neriplayer.data.settings.download.DEFAULT_DOWNLOAD_NETEASE_AUDIO_QUALITY
 import moe.ouom.neriplayer.data.settings.download.DEFAULT_DOWNLOAD_YOUTUBE_AUDIO_QUALITY
+import moe.ouom.neriplayer.data.model.bilibili.subtitle.BILI_SUBTITLE_LANGUAGE_AUTO
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
+import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_KUGOU_LYRIC_OFFSET_MS
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_LRCLIB_LYRIC_OFFSET_MS
@@ -844,7 +846,7 @@ object AutoSettingsSchema {
         @AutoSetting(order = 17)
         val predictiveBackPreviewEnabled = autoSwitchSetting(
             key = "predictive_back_preview_enabled",
-            defaultValue = true,
+            defaultValue = false,
             titleRes = CoreCommonR.string.settings_predictive_back_preview,
             descriptionRes = CoreCommonR.string.settings_predictive_back_preview_desc,
             icon = AutoSettingIcon.ZoomInMap
@@ -1052,6 +1054,51 @@ object AutoSettingsSchema {
             titleRes = CoreCommonR.string.settings_default_lyric_source,
             descriptionRes = CoreCommonR.string.settings_default_lyric_source_desc,
             icon = AutoSettingIcon.LibraryMusic
+        )
+
+        @AutoSetting(
+            key = "bili_cc_subtitle_lyrics_enabled",
+            type = SettingValueType.Boolean,
+            defaultBoolean = true,
+            order = 12,
+            ui = SettingUiType.Switch
+        )
+        val biliCcSubtitleLyricsEnabled = autoSwitchSetting(
+            key = "bili_cc_subtitle_lyrics_enabled",
+            defaultValue = true,
+            titleRes = CoreCommonR.string.settings_bili_cc_subtitle_lyrics,
+            descriptionRes = CoreCommonR.string.settings_bili_cc_subtitle_lyrics_desc,
+            icon = AutoSettingIcon.Subtitles
+        )
+
+        @AutoSetting(
+            key = "bili_cc_subtitle_language",
+            type = SettingValueType.String,
+            defaultString = BILI_SUBTITLE_LANGUAGE_AUTO,
+            order = 13,
+            ui = SettingUiType.Custom
+        )
+        val biliCcSubtitleLanguage = autoStringSetting(
+            key = "bili_cc_subtitle_language",
+            defaultValue = BILI_SUBTITLE_LANGUAGE_AUTO,
+            titleRes = CoreCommonR.string.settings_bili_cc_subtitle_language,
+            descriptionRes = CoreCommonR.string.settings_bili_cc_subtitle_language_desc,
+            icon = AutoSettingIcon.Translate
+        )
+
+        @AutoSetting(
+            key = "bili_cc_subtitle_ai_only_enabled",
+            type = SettingValueType.Boolean,
+            defaultBoolean = true,
+            order = 14,
+            ui = SettingUiType.Switch
+        )
+        val biliCcSubtitleAiOnlyEnabled = autoSwitchSetting(
+            key = "bili_cc_subtitle_ai_only_enabled",
+            defaultValue = true,
+            titleRes = CoreCommonR.string.settings_bili_cc_subtitle_ai_only,
+            descriptionRes = CoreCommonR.string.settings_bili_cc_subtitle_ai_only_desc,
+            icon = AutoSettingIcon.AutoAwesome
         )
     }
 
@@ -1512,6 +1559,19 @@ object AutoSettingsSchema {
         val amllTtmlLyricDefaultOffsetMs = autoSetting(
             titleRes = CoreCommonR.string.settings_lyrics_offset_amll_ttml,
             descriptionRes = CoreCommonR.string.settings_lyrics_offset_amll_ttml_desc
+        )
+
+        @AutoSetting(
+            key = "bili_cc_subtitle_lyric_default_offset_ms",
+            type = SettingValueType.Long,
+            defaultLong = DEFAULT_BILI_CC_SUBTITLE_LYRIC_OFFSET_MS,
+            order = 70,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val biliCcSubtitleLyricDefaultOffsetMs = autoSetting(
+            titleRes = CoreCommonR.string.settings_lyrics_offset_bili_cc_subtitle,
+            descriptionRes = CoreCommonR.string.settings_lyrics_offset_bili_cc_subtitle_desc
         )
     }
 
