@@ -5,11 +5,14 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.content.Intent
 import android.graphics.drawable.Icon
 import android.os.Build
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.core.player.service.AudioPlayerService
+import moe.ouom.neriplayer.core.player.host.PlayerPresentationHost
+import moe.ouom.neriplayer.core.player.testing.PlayerTestEnvironment
 import java.util.Locale
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -21,6 +24,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowBuild
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.`when`
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], application = Application::class)
@@ -64,6 +69,9 @@ class PlaybackPresentationLocaleTest {
         val manufacturer = Build.MANUFACTURER
         try {
             ShadowBuild.setManufacturer("vivo")
+            val presentation = mock(PlayerPresentationHost::class.java)
+            `when`(presentation.mainActivityIntent(context)).thenReturn(Intent("test.OPEN").setPackage(context.packageName))
+            PlayerTestEnvironment.install(presentation = presentation)
             val port = AndroidPlaybackServicePresentationPort(context)
             LanguageManager.setLanguage(context, LanguageManager.Language.ENGLISH)
             val english = port.buildBootstrapNotification()
@@ -78,6 +86,7 @@ class PlaybackPresentationLocaleTest {
             assertTrue(english.extras.getCharSequence(Notification.EXTRA_TEXT) != chinese.extras.getCharSequence(Notification.EXTRA_TEXT))
         } finally {
             ShadowBuild.setManufacturer(manufacturer)
+            PlayerTestEnvironment.reset()
         }
     }
 }

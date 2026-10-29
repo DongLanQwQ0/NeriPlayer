@@ -2,6 +2,7 @@ package moe.ouom.neriplayer.core.player.service.presentation
 
 import android.content.Context
 import android.os.Looper
+import android.os.SystemClock
 import androidx.test.core.app.ApplicationProvider
 import moe.ouom.neriplayer.core.player.service.notification.StatusBarLyricNotificationState
 import moe.ouom.neriplayer.data.model.SongItem
@@ -63,7 +64,7 @@ class VivoMusicOptimisticControlsTest {
         assertTrue(preview.favorite)
         assertEquals(30_000L, preview.positionMs)
         val acknowledged = actual.copy(playbackControlPlaying = true, favorite = true, positionMs = 30_000L)
-        assertEquals(acknowledged, resolve(bridge, acknowledged))
+        assertEquals(acknowledged.copy(positionUpdatedAtMs = SystemClock.elapsedRealtime()), resolve(bridge, acknowledged))
         bridge.clear()
     }
 
@@ -84,7 +85,7 @@ class VivoMusicOptimisticControlsTest {
         val bridge = bridge()
         bridge.previewControl(true, null, 30_000L)
         val next = actual.copy(song = actual.song!!.copy(id = 2L))
-        assertEquals(next, resolve(bridge, next))
+        assertEquals(next.copy(positionUpdatedAtMs = SystemClock.elapsedRealtime()), resolve(bridge, next))
         bridge.clear()
     }
 
