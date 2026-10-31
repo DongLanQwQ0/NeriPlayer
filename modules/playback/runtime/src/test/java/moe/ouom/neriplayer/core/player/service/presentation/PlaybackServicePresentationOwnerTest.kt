@@ -77,6 +77,9 @@ class PlaybackServicePresentationOwnerTest {
         owner.updateNotification(false, true, lyricState, false)
         source.currentPlayback = source.currentPlayback.copy(playerDurationMs = 60_000L)
         owner.updateNotification(false, true, lyricState, false)
+        assertEquals(1, callCount(port, "publishNotification"))
+        advanceTimeBy(500L)
+        runCurrent()
         val inputs = mockingDetails(port).invocations
             .filter { it.method.name == "publishNotification" }
             .map { it.arguments[0] as PlaybackServiceNotificationRenderInputs }
