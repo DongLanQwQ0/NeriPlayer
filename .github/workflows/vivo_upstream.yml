@@ -84,7 +84,7 @@ jobs:
       - name: Test playback presentation and startup
         run: |
           chmod +x gradlew
-          ./gradlew '-Dorg.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8' :playback:runtime:testDebugUnitTest --tests '*PlaybackServicePresentationOwnerTest' --tests '*PlaybackServiceMetadataPublicationTest' --tests '*PlaybackNotificationSeekTest' --tests '*VivoMusic*Test' --tests '*CarMediaSessionCallbackTest' --tests '*PlaybackPresentationLocaleTest' --tests '*ExternalLyricWindowTest' --tests '*PlaybackArtworkResolutionTest' --console=plain
+          ./gradlew '-Dorg.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8' :playback:runtime:testDebugUnitTest --tests '*PlaybackServicePresentationOwnerTest' --tests '*PlaybackServiceMetadataPublicationTest' --tests '*PlaybackNotificationSeekTest' --tests '*AndroidPlaybackNotificationPublicationTest' --tests '*VivoMusic*Test' --tests '*CarMediaSessionCallbackTest' --tests '*PlaybackPresentationLocaleTest' --tests '*ExternalLyricWindowTest' --tests '*PlaybackArtworkResolutionTest' --console=plain
           ./gradlew '-Dorg.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8' :app:testDebugUnitTest --tests '*AppContainer*Test' --tests '*NeriAppStartupGlassGatePolicyTest' --tests '*PlaybackWidget*Test' --tests '*VivoMusicIslandSettingsTest' --console=plain
           ./gradlew '-Dorg.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8' :local:testDebugUnitTest --tests '*VivoMusicIslandAppearanceRepositoryTest' --console=plain
       - name: Build the optimized, non-debuggable vivo release

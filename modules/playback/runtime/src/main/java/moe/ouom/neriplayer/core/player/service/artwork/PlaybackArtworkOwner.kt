@@ -70,6 +70,13 @@ internal class PlaybackArtworkOwner(
 
     fun observe(song: SongItem?): PlaybackArtworkSnapshot {
         val songKey = observedSongKey(song)
+        if (song != null && hasKnownEmptyLocalArtwork(song)) {
+            activeSong = song
+            updateObservedSource(songKey, null)
+            cancelPendingWork()
+            clearForNoSong()
+            return snapshot(songKey)
+        }
         val immediateSource = observedImmediateSource(song)
         val source = resolveMetadataCoverSourceWithRecovery(
             songKey = songKey,
@@ -91,6 +98,10 @@ internal class PlaybackArtworkOwner(
         requestLargeIconIfNeeded(currentCoverSource)
         return snapshot(songKey)
     }
+
+    private fun hasKnownEmptyLocalArtwork(song: SongItem): Boolean =
+        song.originalCoverUrl == "" && song.coverUrl.isNullOrBlank() &&
+            song.customCoverUrl.isNullOrBlank() && resolver.isLocal(song)
 
     private fun observedSongKey(song: SongItem?): String? = song?.playbackVisualKey()
 
